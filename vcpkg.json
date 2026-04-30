@@ -1,0 +1,12 @@
+{
+  "name": "score-pdf-to-gp",
+  "version": "0.1.0",
+  "description": "Score sheet PDF to Guitar Pro converter. OMR via oemer, GPIF emit, GUI.",
+  "homepage": "https://github.com/hchia93/score-pdf-to-gp",
+  "dependencies": [
+    "glfw3",
+    "pugixml",
+    "miniz"
+  ],
+  "builtin-baseline": "0cf34c184ce990471435b5b9c92edcf7424930b1"
+}

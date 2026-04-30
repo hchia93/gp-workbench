@@ -1,0 +1,32 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "windows-x64",
+            "displayName": "Windows x64 (VS 2026)",
+            "description": "Default preset. VS Open Folder reads this; CLI: cmake --preset windows-x64",
+            "generator": "Visual Studio 18 2026",
+            "architecture": { "value": "x64", "strategy": "set" },
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+                "VCPKG_INSTALLED_DIR": "${sourceDir}/build/vcpkg",
+                "FETCHCONTENT_BASE_DIR": "${sourceDir}/build/fetched"
+            }
+        },
+        {
+            "name": "ci-windows-x64",
+            "displayName": "Windows x64 (VS 2022, CI)",
+            "description": "GitHub-Actions preset. windows-latest ships VS 2022, not VS 2026.",
+            "inherits": "windows-x64",
+            "generator": "Visual Studio 17 2022"
+        }
+    ],
+    "buildPresets": [
+        { "name": "debug",      "configurePreset": "windows-x64",    "configuration": "Debug"   },
+        { "name": "release",    "configurePreset": "windows-x64",    "configuration": "Release" },
+        { "name": "ci-release", "configurePreset": "ci-windows-x64", "configuration": "Release" },
+        { "name": "ci-debug",   "configurePreset": "ci-windows-x64", "configuration": "Debug"   }
+    ]
+}
