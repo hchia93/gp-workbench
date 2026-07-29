@@ -1,23 +1,17 @@
-# Compiled artefacts
-*.o
-*.obj
-*.exe
-*.pdb
-*.ilk
-*.exp
-*.idb
-*.dll
-*.lib
-*.a
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
 
-# All CMake/VS-managed output (binaryDir + FETCHCONTENT_BASE_DIR + VCPKG_INSTALLED_DIR
-# all redirected here via CMakePresets.json — GNU-style build/ name)
-/build/
+# Work output: classification tables, decoded scores, benchmark reports
+/work/
 
-# Visual Studio user files
-*.user
-*.suo
-.vs/
+# Third-party arrangements used for local testing, not ours to redistribute
+/sample/
 
 # IDE
 .idea/
@@ -27,6 +21,3 @@
 Thumbs.db
 .DS_Store
 desktop.ini
-
-sample/
-todo.md

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>计划 : PDF 转 Guitar Pro</title>
+<link rel="stylesheet" href="task-style.css">
+</head>
+<body>
+
+<h1>计划 : PDF 转 Guitar Pro</h1>
+<p class="sub"><b>作者</b> Hyrex Chia &nbsp;·&nbsp; <b>最后更新</b> 2026年 7月 29日</p>
+
+<div class="layout">
+<div class="lp">
+
+  <h2>描述</h2>
+  <p class="lead">把吉他谱 PDF 自动转成 Guitar Pro <code>.gp</code> 文件。库存 169 个 PDF，目前 22.5% 可读，可读部分中 33% 的小节完全正确。目标是仅靠图形解码与文本解码，不依赖任何 LLM，把覆盖率推到 50%，精度推到 70%。</p>
+  <div class="solve">
+    <b>要解决的事情：</b>
+    <ul>
+      <li>手工把一首谱敲进 Guitar Pro 要 2 到 3 小时，库存 169 个 PDF</li>
+      <li>已有 34 个 <code>.gp</code>，其余全是死的图片或 PDF，不可检索不可复用</li>
+      <li>转换必须可验证，不能生成了却不知道对不对</li>
+    </ul>
+  </div>
+
+  <h2>资料</h2>
+  <div class="switcher">
+    <div class="sw-tabs">
+      <button class="sw-tab active">现有状态</button>
+      <button class="sw-tab">影响范围</button>
+      <button class="sw-tab">注意事项</button>
+    </div>
+    <div class="sw-panels">
+      <div class="sw-panel active">
+        <p class="lead">三条读取路线。判据不是 PDF 的 Producer 字段，而是品位数字能否从文本层取出。分类器是 <code>classify.py</code>，产出 <code>routes.tsv</code>。</p>
+        <table>
+          <tr><th>路线</th><th>文件</th><th>占比</th><th>需要识别</th><th>状态</th></tr>
+          <tr><td>文本层</td><td>38</td><td>22.5%</td><td>否</td><td>可用</td></tr>
+          <tr><td>矢量轮廓</td><td>46</td><td>27.2%</td><td>否，需一次形状标注</td><td>已验证可行</td></tr>
+          <tr><td>纯位图</td><td>85</td><td>50.3%</td><td>是</td><td>暂缓</td></tr>
+        </table>
+
+        <p class="lead">当前准确率。11 组 <code>.gp</code> 与 PDF 配对，662 个小节。</p>
+        <table>
+          <tr><th>指标</th><th>正确</th><th>比例</th></tr>
+          <tr><td>音符集合一致</td><td>354</td><td>53.5%</td></tr>
+          <tr><td>时值序列一致</td><td>257</td><td>38.8%</td></tr>
+          <tr><td>两者都一致</td><td>219</td><td>33.1%</td></tr>
+        </table>
+
+        <p class="lead">上限依据。</p>
+        <table>
+          <tr><th>路线</th><th>结构性障碍</th><th>依据</th></tr>
+          <tr><td>文本层</td><td>无</td><td><code>行星 - 理想混蛋</code> 音符 95 / 95 全对</td></tr>
+          <tr><td>矢量轮廓</td><td>无</td><td>118 个字形只有 16 种形状，逐点相同</td></tr>
+          <tr><td>纯位图</td><td>有</td><td>真识别，误差不能归零</td></tr>
+        </table>
+      </div>
+
+      <div class="sw-panel">
+        <p class="lead">已有脚本清单。</p>
+        <table>
+          <tr><th>文件</th><th>作用</th><th>层</th></tr>
+          <tr><td><code>probe.py</code></td><td>PDF 分类，产出 <code>probe.tsv</code></td><td>工具</td></tr>
+          <tr><td><code>classify.py</code></td><td>按能否取出品位数字三分路线，产出 <code>routes.tsv</code></td><td>工具</td></tr>
+          <tr><td><code>pdftext.py</code></td><td>PDF 内容流解释器，出定位字形与矢量线段</td><td>形式层</td></tr>
+          <tr><td><code>score.py</code></td><td>谱表、小节线、TAB 音符重建</td><td>形式层</td></tr>
+          <tr><td><code>rhythm.py</code></td><td>五线谱侧的符干符杠时值</td><td>形式层</td></tr>
+          <tr><td><code>tabrhythm.py</code></td><td>TAB 谱表下方的符尾符杠时值</td><td>形式层</td></tr>
+          <tr><td><code>outline.py</code></td><td>矢量轮廓聚类与形状签名</td><td>形式层</td></tr>
+          <tr><td><code>gpwrite.py</code></td><td>模板法生成 <code>.gp</code></td><td>形式层</td></tr>
+          <tr><td><code>gpread.py</code></td><td>读取 <code>.gp</code> 作真值</td><td>校验层</td></tr>
+          <tr><td><code>verify.py</code></td><td>引用图与时值闭合校验</td><td>校验层</td></tr>
+          <tr><td><code>batch.py</code></td><td>全库批量与一致率统计</td><td>工具</td></tr>
+          <tr><td><code>tokens.py</code></td><td>session token 用量统计</td><td>工具</td></tr>
+        </table>
+        <p>不触及：<code>score-pdf-to-gp</code> 仓库形态尚未定，本计划只在 <code>Automate/</code> 做研究，产品形态由结论倒推。</p>
+      </div>
+
+      <div class="sw-panel">
+        <p class="lead">硬规则。</p>
+        <table>
+          <tr><th>规则</th><th>原因</th></tr>
+          <tr><td>不参考 PDF 同目录的 <code>.txt</code> 笔记</td><td>笔记不是生成资料，所有内容必须从谱面推导</td></tr>
+          <tr><td>不依赖 LLM</td><td>不能假设用户有可用的 LLM，前两条路线纯 .py 即可</td></tr>
+          <tr><td>脚本不做解读</td><td>实测 7 个小节里 6 个错误全是解读错，执行错 0 个。不确定要能输出「我不知道」</td></tr>
+          <tr><td>任何改动跑 11 组配对回归</td><td>曾出现单文件调到 33% 而全库只有 19.4% 的过拟合</td></tr>
+          <tr><td>评估以全库为准</td><td>同上</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <h2>实装</h2>
+  <div class="implementation">
+    <p class="impl-desc">分类器先把 PDF 分到三条路线，每条路线接自己的解码器，解码结果统一进 <code>gpwrite.py</code> 写成 <code>.gp</code>，再由 <code>verify.py</code> 与配对 <code>.gp</code> 做回归。前两条路线不含任何识别步骤。</p>
+    <div class="scale">
+    </div>
+  </div>
+  <div class="switcher">
+    <div class="sw-tabs">
+      <button class="sw-tab active">话题 A · 分类器</button>
+      <button class="sw-tab">话题 B · 文本层解码器</button>
+      <button class="sw-tab">话题 C · 矢量轮廓解码器</button>
+      <button class="sw-tab">话题 D · 时值解码</button>
+      <button class="sw-tab">话题 E · 写入与校验</button>
+      <button class="sw-tab">话题 F · 纯位图路线</button>
+    </div>
+    <div class="sw-panels">
+      <div class="sw-panel active">
+        <p class="lead">按品位数字能否从文本层取出，把 169 个 PDF 分到三条路线。</p>
+        <table>
+          <colgroup><col class="c-status"><col class="c-key"><col></colgroup>
+          <tr><th>状态</th><th>步</th><th>内容</th></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步1</td><td><code>probe.py</code> 扫描全库，按 Producer 与内嵌图像初分五类</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步2</td><td><code>classify.py</code> 实跑文本层读取，按是否取出品位数字三分路线</td></tr>
+          <tr><td><span class="badge b-pending">待处理</span></td><td>步3</td><td>把 <code>no-staff</code> 那 85 个再细分，区分真位图与谱表检测失败</td></tr>
+        </table>
+      </div>
+
+      <div class="sw-panel">
+        <p class="lead">Guitar Pro 经 Qt 导出的 PDF，每个字形一个 <code>Tj</code>，品位数字与谱表几何全部可精确取出，无识别步骤。</p>
+        <table>
+          <colgroup><col class="c-status"><col class="c-key"><col></colgroup>
+          <tr><th>状态</th><th>步</th><th>内容</th></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步1</td><td>PDF 内容流解释器，跟踪 CTM 与文本矩阵，输出定位字形</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步2</td><td>ToUnicode CMap 解码，含数组式 bfrange</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步3</td><td>路径算子提取谱表线与小节线，含贝塞尔展开</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步4</td><td>小节线取 TAB 与五线谱交集，排掉符干</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步5</td><td>品位数字限定 Arial 字体，排掉小节号</td></tr>
+          <tr><td><span class="badge b-pending">待处理</span></td><td>步6</td><td>修小节切分偏移，当前部分文件整体错开一格</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步7</td><td>提升音符准确率至 90% 以上</td></tr>
+        </table>
+      </div>
+
+      <div class="sw-panel">
+        <p class="lead">制谱软件把字形转成轮廓的 PDF，谱表几何仍是矢量，精确可取，只有数字形状需要一次标注。</p>
+        <table>
+          <colgroup><col class="c-status"><col class="c-key"><col></colgroup>
+          <tr><th>状态</th><th>步</th><th>内容</th></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步1</td><td>轮廓聚类：按端点连通把线段归成字形</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步2</td><td>归一化占据栅格作形状签名，替代坐标哈希</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步3</td><td>验证形状数量可控，118 个字形对 16 种形状</td></tr>
+          <tr><td><span class="badge b-pending">待处理</span></td><td>步4</td><td>排掉混入的符杠与和弦图元素，把形状数压到 11 左右</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步5</td><td>形状定形：本地字体渲染 <code>0</code> 到 <code>9</code> 比对，两位数品位左位钉死 <code>1</code> 与 <code>2</code>，频率先验定 <code>0</code></td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步6</td><td>跨文件签名复用，26 个签名已在多文件出现</td></tr>
+        </table>
+      </div>
+
+      <div class="sw-panel">
+        <p class="lead">时值来源随导出设置而变，五线谱侧看符干符杠，TAB-only 看谱表下方的符尾与符杠。</p>
+        <table>
+          <colgroup><col class="c-status"><col class="c-key"><col></colgroup>
+          <tr><th>状态</th><th>步</th><th>内容</th></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步1</td><td>五线谱侧：符干符杠分层，符杠按自由端所在侧归属</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步2</td><td>短钩阈值下调至 2.5，实测短钩长 3.74</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步3</td><td>拍号从 <code>timeSig</code> 码位读取</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步4</td><td>TAB-only：符尾字形 <code>U+E240</code> 起按码位定档，符杠按层数</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步5</td><td>符杠覆盖用符干 x 判定，容差 1.5</td></tr>
+          <tr><td><span class="badge b-pending">待处理</span></td><td>步6</td><td>连杠组内短钩归属，当前最大误差来源</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步7</td><td>休止符纳入时值累加</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步8</td><td>多声部判别，符干方向已证伪</td></tr>
+        </table>
+      </div>
+
+      <div class="sw-panel">
+        <p class="lead">模板法生成 <code>.gp</code>，只重写 <code>score.gpif</code>，其余条目原样复制。校验分文件合法性与真值比对两层。</p>
+        <table>
+          <colgroup><col class="c-status"><col class="c-key"><col></colgroup>
+          <tr><th>状态</th><th>步</th><th>内容</th></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步1</td><td>模板法生成器，GP8 可打开并保存</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步2</td><td>悬空 id 引用与小节时值闭合校验</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步3</td><td><code>.gp</code> 真值读取器，95 / 95 闭合自证可靠</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步4</td><td>11 组配对回归基准</td></tr>
+          <tr><td><span class="badge b-pending">待处理</span></td><td>步5</td><td>解码结果接入 <code>gpwrite.py</code>，端到端生成</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步6</td><td>中间表示定形，脱离实例脚本</td></tr>
+        </table>
+      </div>
+
+      <div class="sw-panel">
+        <p class="lead">85 个文件无矢量谱表，需完整图像处理。暂缓，是唯一误差不能归零的路线。</p>
+        <table>
+          <colgroup><col class="c-status"><col class="c-key"><col></colgroup>
+          <tr><th>状态</th><th>步</th><th>内容</th></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步1</td><td>几何定位验证：六线 y 与小节线 x 可检出</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步2</td><td>切片粒度定为一行系统，1x 原生 269 tokens 可读</td></tr>
+          <tr><td><span class="badge b-hold">暂缓</span></td><td>步3</td><td>字形切分与模板匹配</td></tr>
+          <tr><td><span class="badge b-hold">暂缓</span></td><td>步4</td><td>与前两条路线共用识别器</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <h2>其他</h2>
+  <ul>
+    <li>研究记录见同目录 <code>研究方向.md</code> 与 <code>调研-PDF转GP.md</code></li>
+    <li>回归基准：11 组 <code>.gp</code> 与 PDF 配对，662 个小节</li>
+    <li>产品仓库 <code>score-pdf-to-gp</code> 形态待定，其 <code>todo.md</code> 里由 oemer 带来的三项风险已因路线变更失效</li>
+  </ul>
+
+</div>
+<aside class="rp">
+  <nav id="outline" class="outline"></nav>
+</aside>
+</div>
+
+<footer class="credit">本文件由 Claude Opus 5 生成。</footer>
+<script src="task.js"></script>
+
+</body>
+</html>
