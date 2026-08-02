@@ -5,6 +5,7 @@
     score-pdf-to-gp rhythm  <file.pdf> [--page N]   note values per measure
     score-pdf-to-gp gp      <file.gp>  [--measures A-B]   read a .gp back
     score-pdf-to-gp verify  <file.gp>...            dangling refs and bar duration
+    score-pdf-to-gp convert <file.pdf> --template <any.gp> -o <out.gp>
 """
 
 import argparse
@@ -13,6 +14,7 @@ from collections import defaultdict
 from fractions import Fraction
 
 from .classify import probe_route
+from .convert import convert
 from .gp.read import read as read_gp
 from .gp.verify import check as verify_gp
 from .score.rhythm_tab import analyse as analyse_rhythm, length_of, measure_sequence
@@ -75,6 +77,17 @@ def cmd_gp(args):
             print(f"     v{v}: " + " | ".join(repr(b) for b in seq))
 
 
+def cmd_convert(args):
+    info = convert(args.pdf, args.template, args.out,
+                   title=args.title, artist=args.artist,
+                   tempo=args.tempo, capo=args.capo)
+    print(f"{args.pdf}")
+    print(f"  time {info['time']}   measures {info['measures']}   "
+          f"beats {info['beats']}   notes {info['notes']}")
+    print(f"  -> {info['out']}")
+    print("  open it in Guitar Pro; a corrected save becomes ground truth for tools/bench.py")
+
+
 def cmd_verify(args):
     ok = all(verify_gp(p) for p in args.gp)
     return 0 if ok else 1
@@ -104,6 +117,17 @@ def main(argv=None):
     p.add_argument("gp")
     p.add_argument("--measures", help="range like 1-8")
     p.set_defaults(run=cmd_gp)
+
+    p = sub.add_parser("convert", help="decode a PDF and write a .gp")
+    p.add_argument("pdf")
+    p.add_argument("--template", required=True,
+                   help="any .gp to copy the non-XML zip entries from")
+    p.add_argument("-o", "--out", required=True)
+    p.add_argument("--title")
+    p.add_argument("--artist", default="")
+    p.add_argument("--tempo", type=int, default=90)
+    p.add_argument("--capo", type=int, default=0)
+    p.set_defaults(run=cmd_convert)
 
     p = sub.add_parser("verify", help="check a .gp for dangling refs and short bars")
     p.add_argument("gp", nargs="+")

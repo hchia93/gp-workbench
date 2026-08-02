@@ -19,7 +19,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.gp.read import read                       # noqa: E402
-from src.score.rhythm_tab import analyse           # noqa: E402
+from src.score.rhythm_notation import read_time_signature   # noqa: E402
+from src.score.rhythm_tab import analyse, measure_sequence  # noqa: E402
 
 
 def pages_of(path):
@@ -41,44 +42,56 @@ def find_pairs(library):
 def decode(pdf):
     """Measure sequence from the PDF, empty measures included."""
     out = []
+    signature = None
     for page in range(pages_of(pdf)):
         try:
             systems, staves, glyphs = analyse(pdf, page)
         except Exception:
             continue
+        if signature is None:
+            try:
+                signature = read_time_signature(staves, glyphs, text=True)[1]
+            except Exception:
+                signature = ""
         for staff, cols, beams, flags in systems:
-            by_measure = collections.defaultdict(list)
-            for c in cols:
-                by_measure[c["measure"]].append(c)
-            for m in range(1, staff.measures + 1):
-                out.append(by_measure.get(m, []))
+            out += measure_sequence(staff, cols, signature)
     return out
 
 
 def truth(gp):
-    measures = read(gp)
-    return [(sorted(n for b in m.voices.get(1, []) for n in b.notes),
-             [f"{b.value}{'.' * b.dots}" for b in m.voices.get(1, [])])
-            for m in measures]
+    """Notes merge every voice, because the decoder does not separate voices.
+
+    Values can only be scored where there is a single voice: with two voices the
+    beats interleave on the page and no flat list can represent them.
+    """
+    out = []
+    for m in read(gp):
+        voices = [v for v in m.voices.values() if v]
+        notes = sorted(n for v in voices for b in v for n in b.notes)
+        values = [f"{b.value}{'.' * b.dots}" for b in m.voices.get(1, [])]
+        out.append((notes, values, len(voices) > 1))
+    return out
 
 
 def compare(gp, pdf):
     want = truth(gp)
     got = decode(pdf)
-    notes = values = both = n = 0
+    notes = values = both = n = mixed = 0
     rows = []
-    for i, (wn, wv) in enumerate(want):
+    for i, (wn, wv, many) in enumerate(want):
         if i >= len(got):
             break
         n += 1
+        mixed += many
         gn = sorted(x for col in got[i] for x in col["notes"])
         gv = [f"{col['value']}{'.' * col['dots']}" for col in got[i]]
-        ok_n, ok_v = gn == wn, gv == wv
+        ok_n = gn == wn
+        ok_v = (gv == wv) and not many
         notes += ok_n
         values += ok_v
         both += ok_n and ok_v
         rows.append((i + 1, wn, gn, wv, gv, ok_n, ok_v))
-    return n, notes, values, both, rows
+    return n, notes, values, both, mixed, rows
 
 
 def pick_pdf(gp, pdfs):
@@ -106,20 +119,21 @@ def main():
     args = ap.parse_args()
 
     pairs = find_pairs(args.library)
-    print(f"{'song':<34}{'measures':>9}{'notes':>8}{'values':>8}{'both':>7}")
+    print(f"{'song':<34}{'measures':>9}{'notes':>8}{'values':>8}{'both':>7}{'2-voice':>8}")
     total = collections.Counter()
     for song, gp, pdfs in pairs:
         pdf = pick_pdf(gp, pdfs)
         if pdf is None:
             continue
-        n, notes, values, both, rows = compare(gp, pdf)
+        n, notes, values, both, mixed, rows = compare(gp, pdf)
         if n == 0:
             continue
-        print(f"  {song[:32]:<34}{n:>9}{notes:>8}{values:>8}{both:>7}")
+        print(f"  {song[:32]:<34}{n:>9}{notes:>8}{values:>8}{both:>7}{mixed:>8}")
         total["n"] += n
         total["notes"] += notes
         total["values"] += values
         total["both"] += both
+        total["mixed"] += mixed
         if args.detail and args.detail.lower() in song.lower():
             for m, wn, gn, wv, gv, ok_n, ok_v in rows:
                 if ok_n and ok_v:
@@ -137,6 +151,9 @@ def main():
           f"notes {total['notes']} ({100 * total['notes'] / n:.1f}%)   "
           f"values {total['values']} ({100 * total['values'] / n:.1f}%)   "
           f"both {total['both']} ({100 * total['both'] / n:.1f}%)")
+    solo = max(1, total["n"] - total["mixed"])
+    print(f"{total['mixed']} of them carry two voices, which values are not scored on; "
+          f"values over single-voice measures {100 * total['values'] / solo:.1f}%")
 
 
 if __name__ == "__main__":

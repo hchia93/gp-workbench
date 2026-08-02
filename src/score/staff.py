@@ -152,16 +152,20 @@ def find_barlines(staff, segments, partner=None):
     return drop_slivers(merged)
 
 
-def drop_slivers(barlines, ratio=0.25):
+def drop_slivers(barlines, ratio=0.35):
     """Clef and key signature strokes leave barlines a few points apart.
 
     They create measures far narrower than any real one, and every measure after
     them is numbered wrong, so they have to go before notes are assigned.
+
+    The yardstick is the 75th percentile rather than the median: a system can
+    hold more slivers than real measures, and then the median is itself a sliver
+    and nothing gets dropped.
     """
     if len(barlines) < 3:
         return barlines
     widths = [barlines[i + 1] - barlines[i] for i in range(len(barlines) - 1)]
-    typical = sorted(widths)[len(widths) // 2]
+    typical = sorted(widths)[min(len(widths) - 1, int(len(widths) * 0.75))]
     if typical <= 0:
         return barlines
     out = [barlines[0]]

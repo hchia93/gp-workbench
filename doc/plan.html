@@ -8,13 +8,13 @@
 <body>
 
 <h1>计划 : PDF 转 Guitar Pro</h1>
-<p class="sub"><b>作者</b> Hyrex Chia &nbsp;·&nbsp; <b>最后更新</b> 2026年 7月 29日</p>
+<p class="sub"><b>作者</b> Hyrex Chia &nbsp;·&nbsp; <b>最后更新</b> 2026年 7月 30日 &nbsp;·&nbsp; <b>仓库</b> score-pdf-to-gp</p>
 
 <div class="layout">
 <div class="lp">
 
   <h2>描述</h2>
-  <p class="lead">把吉他谱 PDF 自动转成 Guitar Pro <code>.gp</code> 文件。库存 169 个 PDF，目前 22.5% 可读，可读部分中 33% 的小节完全正确。目标是仅靠图形解码与文本解码，不依赖任何 LLM，把覆盖率推到 50%，精度推到 70%。</p>
+  <p class="lead">把吉他谱 PDF 自动转成 Guitar Pro <code>.gp</code> 文件。库存 169 个 PDF，目前 22.5% 可读，可读部分中 62.5% 的小节完全正确。研究阶段已结束，代码与记录都在本仓库，<code>Automate/</code> 已退役。目标是仅靠图形解码与文本解码，不依赖任何 LLM，把覆盖率推到 50%，精度推到 70%。</p>
   <div class="solve">
     <b>要解决的事情：</b>
     <ul>
@@ -33,7 +33,7 @@
     </div>
     <div class="sw-panels">
       <div class="sw-panel active">
-        <p class="lead">三条读取路线。判据不是 PDF 的 Producer 字段，而是品位数字能否从文本层取出。分类器是 <code>classify.py</code>，产出 <code>routes.tsv</code>。</p>
+        <p class="lead">三条读取路线。判据不是 PDF 的 Producer 字段，而是品位数字能否从文本层取出。分类器是 <code>src/classify.py</code>，全库分类由 <code>tools/survey.py</code> 产出 <code>work/routes.tsv</code>。</p>
         <table>
           <tr><th>路线</th><th>文件</th><th>占比</th><th>需要识别</th><th>状态</th></tr>
           <tr><td>文本层</td><td>38</td><td>22.5%</td><td>否</td><td>可用</td></tr>
@@ -41,60 +41,121 @@
           <tr><td>纯位图</td><td>85</td><td>50.3%</td><td>是</td><td>暂缓</td></tr>
         </table>
 
-        <p class="lead">当前准确率。11 组 <code>.gp</code> 与 PDF 配对，662 个小节。</p>
+        <p class="lead">当前准确率。12 首配对歌曲，667 个小节，由 <code>tools/bench.py</code> 跑出，列 M3 精度轮前后。</p>
         <table>
-          <tr><th>指标</th><th>正确</th><th>比例</th></tr>
-          <tr><td>音符集合一致</td><td>354</td><td>53.5%</td></tr>
-          <tr><td>时值序列一致</td><td>257</td><td>38.8%</td></tr>
-          <tr><td>两者都一致</td><td>219</td><td>33.1%</td></tr>
+          <tr><th>指标</th><th>M3 前</th><th>M3 后</th></tr>
+          <tr><td>音符集合一致</td><td>55.0%</td><td>78.9%</td></tr>
+          <tr><td>时值序列一致</td><td>39.6%</td><td>73.2%</td></tr>
+          <tr><td>两者都一致</td><td>37.8%</td><td>62.5%</td></tr>
         </table>
+        <p>时值只统计单声部小节，667 小节里 49 个是双声部，解码器还不分声部。单声部小节上时值一致率 79.0%。</p>
 
         <p class="lead">上限依据。</p>
         <table>
           <tr><th>路线</th><th>结构性障碍</th><th>依据</th></tr>
-          <tr><td>文本层</td><td>无</td><td><code>行星 - 理想混蛋</code> 音符 95 / 95 全对</td></tr>
+          <tr><td>文本层</td><td>无</td><td><code>行星 - 理想混蛋</code> 零误差往返，95 / 95 小节逐拍全对</td></tr>
           <tr><td>矢量轮廓</td><td>无</td><td>118 个字形只有 16 种形状，逐点相同</td></tr>
           <tr><td>纯位图</td><td>有</td><td>真识别，误差不能归零</td></tr>
         </table>
       </div>
 
       <div class="sw-panel">
-        <p class="lead">已有脚本清单。</p>
+        <p class="lead">本仓库布局。</p>
         <table>
-          <tr><th>文件</th><th>作用</th><th>层</th></tr>
-          <tr><td><code>probe.py</code></td><td>PDF 分类，产出 <code>probe.tsv</code></td><td>工具</td></tr>
-          <tr><td><code>classify.py</code></td><td>按能否取出品位数字三分路线，产出 <code>routes.tsv</code></td><td>工具</td></tr>
-          <tr><td><code>pdftext.py</code></td><td>PDF 内容流解释器，出定位字形与矢量线段</td><td>形式层</td></tr>
-          <tr><td><code>score.py</code></td><td>谱表、小节线、TAB 音符重建</td><td>形式层</td></tr>
-          <tr><td><code>rhythm.py</code></td><td>五线谱侧的符干符杠时值</td><td>形式层</td></tr>
-          <tr><td><code>tabrhythm.py</code></td><td>TAB 谱表下方的符尾符杠时值</td><td>形式层</td></tr>
-          <tr><td><code>outline.py</code></td><td>矢量轮廓聚类与形状签名</td><td>形式层</td></tr>
-          <tr><td><code>gpwrite.py</code></td><td>模板法生成 <code>.gp</code></td><td>形式层</td></tr>
-          <tr><td><code>gpread.py</code></td><td>读取 <code>.gp</code> 作真值</td><td>校验层</td></tr>
-          <tr><td><code>verify.py</code></td><td>引用图与时值闭合校验</td><td>校验层</td></tr>
-          <tr><td><code>batch.py</code></td><td>全库批量与一致率统计</td><td>工具</td></tr>
-          <tr><td><code>tokens.py</code></td><td>session token 用量统计</td><td>工具</td></tr>
+          <tr><th>路径</th><th>作用</th></tr>
+          <tr><td><code>src/pdf/content.py</code></td><td>PDF 内容流解释器，输出定位字形与矢量线段</td></tr>
+          <tr><td><code>src/score/staff.py</code></td><td>谱表、小节线、TAB 音符重建</td></tr>
+          <tr><td><code>src/score/rhythm_notation.py</code></td><td>五线谱侧的符干符杠时值</td></tr>
+          <tr><td><code>src/score/rhythm_tab.py</code></td><td>TAB 谱表下方的符尾符杠时值</td></tr>
+          <tr><td><code>src/score/outline.py</code></td><td>矢量轮廓聚类与形状签名</td></tr>
+          <tr><td><code>src/gp/read.py</code></td><td>读取 <code>.gp</code> 作真值</td></tr>
+          <tr><td><code>src/gp/write.py</code></td><td>模板法生成 <code>.gp</code></td></tr>
+          <tr><td><code>src/gp/verify.py</code></td><td>悬空引用与小节时值闭合校验</td></tr>
+          <tr><td><code>src/classify.py</code></td><td>三分路线判定</td></tr>
+          <tr><td><code>src/cli.py</code></td><td>命令行入口</td></tr>
+          <tr><td><code>tools/survey.py</code></td><td>全库分类，产出 <code>work/routes.tsv</code></td></tr>
+          <tr><td><code>tools/bench.py</code></td><td>配对回归基准</td></tr>
+          <tr><td><code>doc/研究方向.md</code></td><td>研究记录，含全部实测数字与踩过的坑</td></tr>
+          <tr><td><code>doc/调研-PDF转GP.md</code></td><td>gpif 格式的逆向结论</td></tr>
         </table>
-        <p>不触及：<code>score-pdf-to-gp</code> 仓库形态尚未定，本计划只在 <code>Automate/</code> 做研究，产品形态由结论倒推。</p>
+        <p>运行方式：<code>python score-pdf-to-gp.py &lt;command&gt;</code>，不需要安装。</p>
       </div>
 
       <div class="sw-panel">
         <p class="lead">硬规则。</p>
         <table>
           <tr><th>规则</th><th>原因</th></tr>
-          <tr><td>不参考 PDF 同目录的 <code>.txt</code> 笔记</td><td>笔记不是生成资料，所有内容必须从谱面推导</td></tr>
-          <tr><td>不依赖 LLM</td><td>不能假设用户有可用的 LLM，前两条路线纯 .py 即可</td></tr>
-          <tr><td>脚本不做解读</td><td>实测 7 个小节里 6 个错误全是解读错，执行错 0 个。不确定要能输出「我不知道」</td></tr>
-          <tr><td>任何改动跑 11 组配对回归</td><td>曾出现单文件调到 33% 而全库只有 19.4% 的过拟合</td></tr>
-          <tr><td>评估以全库为准</td><td>同上</td></tr>
+          <tr><td>改完解码器必须跑 <code>python tools/bench.py --library &lt;path&gt;</code></td><td>单文件调参会过拟合，曾出现单文件 33% 而全库 19%</td></tr>
+          <tr><td>修一个 bug 可能坏另一个</td><td>实测：小节线 sliver 修复让某文件音符从 1 升到 58，同时让另一文件从 95 掉到 43。只有基准能发现</td></tr>
+          <tr><td>不参考 PDF 同目录的 <code>.txt</code> 笔记</td><td>笔记不是生成资料</td></tr>
+          <tr><td>不依赖 LLM</td><td>不能假设用户有可用的 LLM，前两条路线纯 Python 即可</td></tr>
+          <tr><td>脚本不做解读</td><td>不确定要能输出「我不知道」，不要猜一个值填上</td></tr>
         </table>
       </div>
     </div>
   </div>
 
+  <h2>路线图</h2>
+  <p class="lead">排序依据不是难度，是「哪一步做完能让下一步的收益看得见」。</p>
+  <table>
+    <tr><th>里程碑</th><th>目标</th><th>涉及话题</th><th>状态</th></tr>
+    <tr><td>M1 读取</td><td>文本层路线读出音符与时值，建立回归基准</td><td>A B D E</td><td><span class="badge b-done">已完成</span></td></tr>
+    <tr><td>M2 输出</td><td>端到端产出可在 Guitar Pro 打开的 <code>.gp</code></td><td>E</td><td><span class="badge b-done">已完成</span></td></tr>
+    <tr><td>M3 精度</td><td>配对基准的「两者都对」从 37.8% 提到 70%，实到 62.5%</td><td>B D</td><td><span class="badge b-done">已完成</span></td></tr>
+    <tr><td>M4 覆盖</td><td>打通矢量轮廓路线，覆盖率从 22.5% 提到约 50%</td><td>C</td><td><span class="badge b-todo">待建</span></td></tr>
+    <tr><td>M5 界面</td><td>GUI，含人工修正</td><td>G</td><td><span class="badge b-todo">待建</span></td></tr>
+    <tr><td>M6 位图</td><td>纯位图路线</td><td>F</td><td><span class="badge b-hold">暂缓</span></td></tr>
+  </table>
+
+  <p class="lead">M2 实测 <code>行星 - 理想混蛋</code>：97 小节，323 beat，610 音符，<code>verify</code> 无悬空引用，前 6 小节与真值逐 beat 完全一致。已知缺陷全部归 M3。</p>
+  <table>
+    <tr><th>缺陷</th><th>成因</th></tr>
+    <tr><td>97 小节，真值 95</td><td>小节线检测</td></tr>
+    <tr><td>45 个小节时长不足 3/4</td><td>Half 被读成 Quarter 等时值 bug</td></tr>
+    <tr><td>空小节写成一个 muted whole note</td><td>writer 尚不支持休止符</td></tr>
+  </table>
+
+  <div class="solve">
+    <b>为什么先做输出，不先修精度：</b>
+    <ul>
+      <li>37.8% 的 <code>.gp</code> 比 37.8% 这个数字有用得多。在 Guitar Pro 里打开就能一眼看见错在哪，比逐小节 diff 快一个量级</li>
+      <li>它把反馈回路接上。用户在 GP 里改完存盘，那份就是新的真值。空港曲那次改了 7 个小节，直接暴露出四个结构性错误</li>
+      <li>小节错位会掩盖时值改进。漏解一个小节就毁掉它之后的全部，先接通输出才看得出修 bug 有没有用</li>
+    </ul>
+  </div>
+
+  <p class="lead">M3 内部的修 bug 顺序。</p>
+  <table>
+    <tr><th>顺序</th><th>问题</th><th>为什么排这个位置</th></tr>
+    <tr><td>1</td><td>漏解小节，例如某文件 m37 解出为空</td><td>错位会连累其后全部小节，不先修则后两项的改进量看不出来</td></tr>
+    <tr><td>2</td><td>二分音符被读成四分</td><td>判据独立，改动面小</td></tr>
+    <tr><td>3</td><td>连杠组内短钩归属</td><td>当前时值误差的主要来源，但需要前两项先稳住</td></tr>
+  </table>
+
+  <p class="lead">M3 结果。12 首配对，667 小节。</p>
+  <table>
+    <tr><th>指标</th><th>轮次前</th><th>轮次后</th></tr>
+    <tr><td>notes</td><td>55.0%</td><td>78.9%</td></tr>
+    <tr><td>values</td><td>39.6%</td><td>73.2%</td></tr>
+    <tr><td>both</td><td>37.8%</td><td>62.5%</td></tr>
+  </table>
+  <p><code>行星 - 理想混蛋</code> 首次零误差往返：解码成 95 小节，写成 <code>.gp</code> 后回读，95 / 95 小节逐拍与真值完全一致，<code>verify</code> 报全部小节闭合。<code>我这个人 - 艾怡良</code> 84 小节里 83 个完全正确。</p>
+
+  <p>每个里程碑完成后跑 <code>python tools/bench.py --library &lt;path&gt;</code>，数字进不了就是没完成。</p>
+
   <h2>实装</h2>
   <div class="implementation">
-    <p class="impl-desc">分类器先把 PDF 分到三条路线，每条路线接自己的解码器，解码结果统一进 <code>gpwrite.py</code> 写成 <code>.gp</code>，再由 <code>verify.py</code> 与配对 <code>.gp</code> 做回归。前两条路线不含任何识别步骤。</p>
+    <p class="impl-desc">分类器先把 PDF 分到三条路线，每条路线接自己的解码器，解码结果统一进 <code>src/gp/write.py</code> 写成 <code>.gp</code>，再由 <code>src/gp/verify.py</code> 与配对 <code>.gp</code> 做回归。前两条路线不含任何识别步骤。第七个话题是 GUI，排在解码精度之后。</p>
+    <p>端到端转换：<code>python score-pdf-to-gp.py convert &lt;file.pdf&gt; --template &lt;any.gp&gt; -o &lt;out.gp&gt;</code>。<code>--template</code> 必填，仓库不附带模板，用户自备任意一个 <code>.gp</code>。</p>
+    <p class="lead">M3 精度轮的四项改动。</p>
+    <table>
+      <tr><th>改动</th><th>位置</th><th>效果</th></tr>
+      <tr><td>小节闭合 + 水平间距解歧，枚举能凑满拍号的组合，取比例最贴合间距的那个</td><td><code>src/score/rhythm_tab.py</code> 的 <code>resolve</code></td><td>values 39.6% → 50.8%</td></tr>
+      <tr><td>延音拍补全，有符干无品位数字的 x 按前一拍音高补一拍</td><td><code>stems_under</code> / <code>tied_columns</code></td><td>notes 55.0% → 65.5%，values → 71.6%</td></tr>
+      <tr><td><code>drop_slivers</code> 基准宽度改用 75 百分位，阈值 <code>ratio=0.35</code></td><td><code>src/score/staff.py</code></td><td>notes → 78.9%</td></tr>
+      <tr><td>基准口径修正，音符合并全部声部，时值只统计单声部小节，多声部数量单列</td><td><code>tools/bench.py</code></td><td>口径修正，非精度提升</td></tr>
+    </table>
+    <p>另修 <code>src/convert.py</code> 的 <code>decode</code> 调 <code>measure_sequence</code> 时漏传拍号，产物路径上闭合解歧从未生效。</p>
     <div class="scale">
     </div>
   </div>
@@ -106,6 +167,7 @@
       <button class="sw-tab">话题 D · 时值解码</button>
       <button class="sw-tab">话题 E · 写入与校验</button>
       <button class="sw-tab">话题 F · 纯位图路线</button>
+      <button class="sw-tab">话题 G · GUI</button>
     </div>
     <div class="sw-panels">
       <div class="sw-panel active">
@@ -113,8 +175,8 @@
         <table>
           <colgroup><col class="c-status"><col class="c-key"><col></colgroup>
           <tr><th>状态</th><th>步</th><th>内容</th></tr>
-          <tr><td><span class="badge b-done">已完成</span></td><td>步1</td><td><code>probe.py</code> 扫描全库，按 Producer 与内嵌图像初分五类</td></tr>
-          <tr><td><span class="badge b-done">已完成</span></td><td>步2</td><td><code>classify.py</code> 实跑文本层读取，按是否取出品位数字三分路线</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步1</td><td>扫描全库，按 Producer 与内嵌图像初分五类</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步2</td><td><code>src/classify.py</code> 实跑文本层读取，按是否取出品位数字三分路线</td></tr>
           <tr><td><span class="badge b-pending">待处理</span></td><td>步3</td><td>把 <code>no-staff</code> 那 85 个再细分，区分真位图与谱表检测失败</td></tr>
         </table>
       </div>
@@ -129,8 +191,12 @@
           <tr><td><span class="badge b-done">已完成</span></td><td>步3</td><td>路径算子提取谱表线与小节线，含贝塞尔展开</td></tr>
           <tr><td><span class="badge b-done">已完成</span></td><td>步4</td><td>小节线取 TAB 与五线谱交集，排掉符干</td></tr>
           <tr><td><span class="badge b-done">已完成</span></td><td>步5</td><td>品位数字限定 Arial 字体，排掉小节号</td></tr>
-          <tr><td><span class="badge b-pending">待处理</span></td><td>步6</td><td>修小节切分偏移，当前部分文件整体错开一格</td></tr>
-          <tr><td><span class="badge b-todo">待建</span></td><td>步7</td><td>提升音符准确率至 90% 以上</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步6</td><td>小节线去重容差放宽到 4.0，并按中位宽度剔除谱号区产生的窄假小节</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步7</td><td>输出包含空小节，此前跳过空小节导致整条序列错位一格</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步8</td><td><code>drop_slivers</code> 基准宽度改用 75 百分位，阈值 <code>ratio=0.35</code>。原用中位数，碎片多于真小节时中位数本身就是碎片，一个都删不掉</td></tr>
+          <tr><td><span class="badge b-pending">待处理</span></td><td>步9</td><td>仍有个别小节漏解，例如某文件 m37 解出为空而真值有音符，之后整体错位</td></tr>
+          <tr><td><span class="badge b-pending">待处理</span></td><td>步10</td><td><code>好不容易</code> 音符 34 / 101，尚未定位</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步11</td><td>音符准确率从 78.9% 提升到 90% 以上</td></tr>
         </table>
       </div>
 
@@ -140,11 +206,12 @@
           <colgroup><col class="c-status"><col class="c-key"><col></colgroup>
           <tr><th>状态</th><th>步</th><th>内容</th></tr>
           <tr><td><span class="badge b-done">已完成</span></td><td>步1</td><td>轮廓聚类：按端点连通把线段归成字形</td></tr>
-          <tr><td><span class="badge b-done">已完成</span></td><td>步2</td><td>归一化占据栅格作形状签名，替代坐标哈希</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步2</td><td>归一化占据栅格作形状签名，替代坐标哈希，因贝塞尔展开后亚像素偏移会让同一字形哈希不同</td></tr>
           <tr><td><span class="badge b-done">已完成</span></td><td>步3</td><td>验证形状数量可控，118 个字形对 16 种形状</td></tr>
           <tr><td><span class="badge b-pending">待处理</span></td><td>步4</td><td>排掉混入的符杠与和弦图元素，把形状数压到 11 左右</td></tr>
-          <tr><td><span class="badge b-todo">待建</span></td><td>步5</td><td>形状定形：本地字体渲染 <code>0</code> 到 <code>9</code> 比对，两位数品位左位钉死 <code>1</code> 与 <code>2</code>，频率先验定 <code>0</code></td></tr>
-          <tr><td><span class="badge b-todo">待建</span></td><td>步6</td><td>跨文件签名复用，26 个签名已在多文件出现</td></tr>
+          <tr><td><span class="badge b-pending">待处理</span></td><td>步5</td><td><code>src/score/outline.py</code> 的 <code>survey()</code> 里 <code>HERE</code> / <code>ROOT</code> / <code>SEP</code> 未定义</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步6</td><td>形状定形：本地字体渲染 <code>0</code> 到 <code>9</code> 比对，两位数品位左位钉死 <code>1</code> 与 <code>2</code>，频率先验定 <code>0</code>。缺的是「签名 → 数字」标注环节，<code>今宵多珍重</code> 整曲只有 11 个文本 glyph</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步7</td><td>跨文件签名复用，26 个签名已在多文件出现</td></tr>
         </table>
       </div>
 
@@ -158,9 +225,11 @@
           <tr><td><span class="badge b-done">已完成</span></td><td>步3</td><td>拍号从 <code>timeSig</code> 码位读取</td></tr>
           <tr><td><span class="badge b-done">已完成</span></td><td>步4</td><td>TAB-only：符尾字形 <code>U+E240</code> 起按码位定档，符杠按层数</td></tr>
           <tr><td><span class="badge b-done">已完成</span></td><td>步5</td><td>符杠覆盖用符干 x 判定，容差 1.5</td></tr>
-          <tr><td><span class="badge b-pending">待处理</span></td><td>步6</td><td>连杠组内短钩归属，当前最大误差来源</td></tr>
-          <tr><td><span class="badge b-todo">待建</span></td><td>步7</td><td>休止符纳入时值累加</td></tr>
-          <tr><td><span class="badge b-todo">待建</span></td><td>步8</td><td>多声部判别，符干方向已证伪</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步6</td><td><code>level 0</code> 解歧：TAB 里 Quarter / Half / Whole 同形，用「小节必须凑满拍号」加「水平间距正比于时值」两个约束，枚举组合取比例最贴合的那个</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步7</td><td>延音拍补全：tie 的目标音不画品位数字只留符干，扫节奏带里有符干无数字的 x，按前一拍音高补一拍</td></tr>
+          <tr><td><span class="badge b-pending">待处理</span></td><td>步8</td><td>连杠组内短钩归属。「堆叠连续性」几何判据已被数据否掉，1341 个样本里正确与错误样本的间距 / 厚度比完全重叠，需要正交信息</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步9</td><td>休止符纳入时值累加</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步10</td><td>多声部判别，符干方向已证伪。<code>Don't Look Back</code> 53 小节里 48 个是双声部，这些小节当前不计入时值统计</td></tr>
         </table>
       </div>
 
@@ -172,9 +241,12 @@
           <tr><td><span class="badge b-done">已完成</span></td><td>步1</td><td>模板法生成器，GP8 可打开并保存</td></tr>
           <tr><td><span class="badge b-done">已完成</span></td><td>步2</td><td>悬空 id 引用与小节时值闭合校验</td></tr>
           <tr><td><span class="badge b-done">已完成</span></td><td>步3</td><td><code>.gp</code> 真值读取器，95 / 95 闭合自证可靠</td></tr>
-          <tr><td><span class="badge b-done">已完成</span></td><td>步4</td><td>11 组配对回归基准</td></tr>
-          <tr><td><span class="badge b-pending">待处理</span></td><td>步5</td><td>解码结果接入 <code>gpwrite.py</code>，端到端生成</td></tr>
-          <tr><td><span class="badge b-todo">待建</span></td><td>步6</td><td>中间表示定形，脱离实例脚本</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步4</td><td>配对回归基准固化为 <code>tools/bench.py</code>，自动发现同目录的 <code>.gp</code> 与 PDF 配对</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步5</td><td>解码结果经 <code>src/convert.py</code> 接入 <code>src/gp/write.py</code>，<code>convert</code> 子命令端到端生成</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步6</td><td><code>tools/bench.py</code> 口径修正：音符比对合并全部声部，时值只在单声部小节上统计，多声部数量单列一栏</td></tr>
+          <tr><td><span class="badge b-done">已完成</span></td><td>步7</td><td><code>src/convert.py</code> 的 <code>decode</code> 补上传给 <code>measure_sequence</code> 的拍号，此前产物路径上闭合解歧从未生效</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步8</td><td>中间表示定形，脱离实例脚本</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步9</td><td>writer 支持休止符，当前空小节写成一个 muted whole note</td></tr>
         </table>
       </div>
 
@@ -189,14 +261,27 @@
           <tr><td><span class="badge b-hold">暂缓</span></td><td>步4</td><td>与前两条路线共用识别器</td></tr>
         </table>
       </div>
+
+      <div class="sw-panel">
+        <p class="lead">目前只有命令行。GUI 是明确需求，但要等解码精度稳定后再做，否则界面会跟着算法反复改。</p>
+        <table>
+          <colgroup><col class="c-status"><col class="c-key"><col></colgroup>
+          <tr><th>状态</th><th>步</th><th>内容</th></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步1</td><td>选型：<code>tkinter</code> 零依赖但样式受限，<code>PySide6</code> 功能全但增加依赖与体积</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步2</td><td>最小可用界面：拖入 PDF，显示路线判定与逐小节解码结果</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步3</td><td>人工修正界面，让用户在解码结果上直接改错音</td></tr>
+          <tr><td><span class="badge b-todo">待建</span></td><td>步4</td><td>导出 <code>.gp</code> 并调用校验</td></tr>
+        </table>
+      </div>
     </div>
   </div>
 
   <h2>其他</h2>
   <ul>
-    <li>研究记录见同目录 <code>研究方向.md</code> 与 <code>调研-PDF转GP.md</code></li>
-    <li>回归基准：11 组 <code>.gp</code> 与 PDF 配对，662 个小节</li>
-    <li>产品仓库 <code>score-pdf-to-gp</code> 形态待定，其 <code>todo.md</code> 里由 oemer 带来的三项风险已因路线变更失效</li>
+    <li>研究记录见 <code>doc/研究方向.md</code> 与 <code>doc/调研-PDF转GP.md</code></li>
+    <li>回归基准：同目录同时有 <code>.gp</code> 与 PDF 的歌曲，当前 12 首 667 小节</li>
+    <li>运行 <code>python tools/survey.py --library &lt;path&gt;</code> 重新生成分类表</li>
+    <li>本计划由其他 agent 接手时，先读 <code>doc/研究方向.md</code> 的「踩过的坑」一节</li>
   </ul>
 
 </div>

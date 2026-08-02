@@ -7,12 +7,13 @@ is TAB-only, so this is the path that covers most systems.
 Usage: python tabrhythm.py <file.pdf> [--page N] [--gp <file.gp>]
 """
 
+import bisect
 from collections import defaultdict
 from fractions import Fraction
 
 from ..pdf.content import extract
 from .rhythm_notation import angle, DENOM
-from .staff import find_staves, find_barlines, attach_notes, pair_systems
+from .staff import attach_notes, dedupe, find_barlines, find_staves, pair_systems
 
 FLAG_LO, FLAG_HI = 0xE240, 0xE24F     # flag8thUp .. flag128thDown
 AUG_DOT = ""
@@ -52,6 +53,38 @@ def beams_under(staff, segments):
     return out
 
 
+def stems_under(staff, segments):
+    """x of every rhythm stem drawn below the staff.
+
+    Guitar Pro prints a stem for every beat but prints no fret digit for the
+    far end of a tie, so a stem with no digit above it is a tied beat. Reading
+    stems is the only way to see those beats at all.
+    """
+    xs = []
+    for s in segments:
+        if not s.vertical or s.length < 2.0:
+            continue
+        top = max(s.y0, s.y1)
+        if staff.bottom - REACH < top < staff.bottom + 1.5:
+            xs.append((s.x0 + s.x1) / 2)
+    return dedupe(sorted(xs), tol=1.5)
+
+
+def tied_columns(staff, segments, columns):
+    """Beats that carry a stem but no digit, as (x, notes copied from before)."""
+    known = sorted(columns)
+    out = []
+    for stem_x in stems_under(staff, segments):
+        x = stem_x - STEM_OFFSET
+        if any(abs(x - k) <= COLUMN_TOL for k in known):
+            continue
+        earlier = [k for k in known if k < x]
+        if not earlier:
+            continue
+        out.append((x, columns[earlier[-1]]))
+    return out
+
+
 def durations(staff, glyphs, segments):
     """One event per TAB note column, with its note value."""
     beams = beams_under(staff, segments)
@@ -64,6 +97,8 @@ def durations(staff, glyphs, segments):
     columns = defaultdict(list)
     for n in staff.notes:
         columns[round(n.x, 1)].append(n)
+    tied = {round(x, 1): source for x, source in tied_columns(staff, segments, columns)}
+    columns.update(tied)
 
     out = []
     for x in sorted(columns):
@@ -79,7 +114,8 @@ def durations(staff, glyphs, segments):
         out.append({"x": x, "value": VALUE_BY_LEVEL.get(level, "64th"),
                     "dots": min(ndots, 2), "level": level,
                     "notes": [(n.string, n.fret) for n in columns[x]],
-                    "measure": columns[x][0].measure})
+                    "measure": (bisect.bisect_right(staff.barlines, x)
+                                if x in tied else columns[x][0].measure)})
     return out, beams, flags
 
 
@@ -90,7 +126,61 @@ def length_of(col):
     return base
 
 
-def measure_sequence(staff, cols):
+def dotting(dots):
+    return Fraction(2) - Fraction(1, 2 ** dots) if dots else Fraction(1)
+
+
+def resolve(seq, target, x_end):
+    """Decide the durations tablature leaves ambiguous.
+
+    Level 0 means no flag and no beam, and that is how Quarter, Half and Whole
+    all look in TAB. Two facts settle it: the measure has to add up to the time
+    signature, and engraving spaces notes proportional to how long they last.
+    So enumerate the assignments that close the measure and keep the one whose
+    proportions best match the horizontal gaps.
+    """
+    free = [i for i, c in enumerate(seq) if c["level"] == 0]
+    if not free or len(free) > 6:
+        return seq
+    fixed = sum(length_of(c) for i, c in enumerate(seq) if i not in set(free))
+    budget = target - fixed
+    if budget <= 0:
+        return seq
+
+    xs = [c["x"] for c in seq] + [x_end]
+    span = {i: max(xs[i + 1] - xs[i], 0.1) for i in free}
+    total = sum(span.values())
+    ideal = {i: budget * Fraction(span[i] / total).limit_denominator(64) for i in free}
+
+    best, cost = None, None
+    def walk(k, used, pick):
+        nonlocal best, cost
+        if used > budget:
+            return
+        if k == len(free):
+            if used != budget:
+                return
+            c = sum(abs(pick[i] - ideal[i]) for i in free)
+            if cost is None or c < cost:
+                best, cost = dict(pick), c
+            return
+        i = free[k]
+        for base in ("Quarter", "Half", "Whole"):
+            pick[i] = Fraction(1, DENOM[base]) * dotting(seq[i]["dots"])
+            walk(k + 1, used + pick[i], pick)
+        pick.pop(i, None)
+    walk(0, Fraction(0), {})
+    if best is None:
+        return seq
+
+    for i, value in ((i, v) for i in free
+                     for v in ("Quarter", "Half", "Whole")
+                     if Fraction(1, DENOM[v]) * dotting(seq[i]["dots"]) == best[i]):
+        seq[i]["value"] = value
+    return seq
+
+
+def measure_sequence(staff, cols, signature=None):
     """Every measure the barlines define, empty ones included.
 
     A score can open with an empty or partial measure. Emitting only measures
@@ -99,7 +189,15 @@ def measure_sequence(staff, cols):
     by_measure = defaultdict(list)
     for c in cols:
         by_measure[c["measure"]].append(c)
-    return [by_measure.get(m, []) for m in range(1, staff.measures + 1)]
+    out = [by_measure.get(m, []) for m in range(1, staff.measures + 1)]
+    if not signature:
+        return out
+    beats, unit = (int(n) for n in signature.split("/"))
+    target = Fraction(beats, unit)
+    for m, seq in enumerate(out, start=1):
+        if seq and m < len(staff.barlines):
+            resolve(seq, target, staff.barlines[m])
+    return out
 
 
 def analyse(path, page=0):
