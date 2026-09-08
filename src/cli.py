@@ -85,7 +85,7 @@ def cmd_convert(args):
     print(f"  time {info['time']}   measures {info['measures']}   "
           f"beats {info['beats']}   notes {info['notes']}")
     print(f"  -> {info['out']}")
-    print("  open it in Guitar Pro; a corrected save becomes ground truth for tools/bench.py")
+    print("  open it in Guitar Pro; a corrected save becomes ground truth for tools/bench/bench.py")
 
 
 def cmd_verify(args):

@@ -6,8 +6,8 @@ check that catches a wrong direction early: tuning against one file looked like
 
 Run this after every change to the decoders.
 
-    python tools/bench.py --library <path/to/scores>
-    python tools/bench.py --library <path/to/scores> --detail "The Crow"
+    python tools/bench/bench.py --library <path/to/scores>
+    python tools/bench/bench.py --library <path/to/scores> --detail "The Crow"
 """
 
 import argparse
@@ -16,7 +16,7 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from src.gp.read import read                       # noqa: E402
 from src.score.rhythm_notation import read_time_signature   # noqa: E402

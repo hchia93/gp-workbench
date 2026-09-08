@@ -61,9 +61,9 @@ python score-pdf-to-gp.py verify  <file.gp>...
 工具脚本：
 
 ```bash
-python tools/survey.py --library <path> --csv work/routes.tsv
-python tools/bench.py --library <path>
-python tools/bench.py --library <path> --detail "song name"
+python tools/survey/survey.py --library <path> --csv work/routes.tsv
+python tools/bench/bench.py --library <path>
+python tools/bench/bench.py --library <path> --detail "song name"
 ```
 
 ## 工作原理
@@ -126,8 +126,10 @@ src/
 └── cli.py      command line entry
 
 tools/
-├── survey.py   classify a whole library
-└── bench.py    regression against songs that have both .gp and PDF
+├── survey/       全库分类普查
+├── bench/        配对回归基准
+├── fetch_audio/  抓音轨（音频链路）
+└── ab_render/    A/B 片段渲染（音频链路）
 
 doc/
 ├── plan.html   the working plan, open in a browser
@@ -136,7 +138,7 @@ doc/
 
 模块之间用相对 import，`score-pdf-to-gp.py` 把仓库根加进 `sys.path` 后调用 `src.cli`。刻意不提供 console script，因为 `src/pdf` 与 `src/score` 这类顶层名字装进 site-packages 会撞车。
 
-`tools/bench.py` 是最重要的一个。解码器每改一次都要跑，因为单文件调参会过拟合：曾出现单文件 33% 而全库 19% 的情况。
+`tools/bench/bench.py` 是最重要的一个。解码器每改一次都要跑，因为单文件调参会过拟合：曾出现单文件 33% 而全库 19% 的情况。
 
 ## 开发
 
@@ -145,7 +147,7 @@ doc/
 ```bash
 git clone <repo>
 cd score-pdf-to-gp
-python tools/bench.py --library <your score library>
+python tools/bench/bench.py --library <your score library>
 ```
 
 `work/` 是 gitignored 的输出目录，分类表与基准报告写在那里。

@@ -4,7 +4,7 @@ The question that decides the route is not the producer string, it is whether
 the fret numbers come back out of the text layer. So this runs the text-layer
 reader and records what it got.
 
-    python tools/survey.py --library <path/to/scores> --csv work/routes.tsv
+    python tools/survey/survey.py --library <path/to/scores> --csv work/routes.tsv
 """
 
 import argparse
@@ -14,7 +14,7 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from src.classify import EMPTY, IMAGE_ROUTE, TEXT_ROUTE, probe_route   # noqa: E402
 from src.pdf.content import extract                                    # noqa: E402

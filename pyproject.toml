@@ -12,3 +12,9 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Hyrex Chia" }]
 dependencies = []
+
+# The PDF route needs nothing. Only the audio route pulls anything in, and its
+# collection step needs no admin rights: pip install --user handles both.
+[project.optional-dependencies]
+audio = ["numpy"]
+fetch = ["yt-dlp", "imageio-ffmpeg"]

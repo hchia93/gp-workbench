@@ -61,9 +61,9 @@ Commands:
 Tool scripts:
 
 ```bash
-python tools/survey.py --library <path> --csv work/routes.tsv
-python tools/bench.py --library <path>
-python tools/bench.py --library <path> --detail "song name"
+python tools/survey/survey.py --library <path> --csv work/routes.tsv
+python tools/bench/bench.py --library <path>
+python tools/bench/bench.py --library <path> --detail "song name"
 ```
 
 ## How it works
@@ -126,8 +126,10 @@ src/
 └── cli.py      command line entry
 
 tools/
-├── survey.py   classify a whole library
-└── bench.py    regression against songs that have both .gp and PDF
+├── survey/       classify a whole library
+├── bench/        regression against songs that have both .gp and PDF
+├── fetch_audio/  fetch an audio track (audio chain)
+└── ab_render/    A/B clip rendering (audio chain)
 
 doc/
 ├── plan.html   the working plan, open in a browser
@@ -136,7 +138,7 @@ doc/
 
 Modules import each other relatively, and `score-pdf-to-gp.py` adds the repository root to `sys.path` before calling `src.cli`. No console script is provided on purpose, because top-level names like `src/pdf` and `src/score` would collide once installed into site-packages.
 
-`tools/bench.py` is the most important one. It runs after every decoder change, because tuning against a single file overfits: one run hit 33% on a single file while the whole library sat at 19%.
+`tools/bench/bench.py` is the most important one. It runs after every decoder change, because tuning against a single file overfits: one run hit 33% on a single file while the whole library sat at 19%.
 
 ## Development
 
@@ -145,7 +147,7 @@ Requires Python 3.10 or newer, no third-party dependencies, no install step.
 ```bash
 git clone <repo>
 cd score-pdf-to-gp
-python tools/bench.py --library <your score library>
+python tools/bench/bench.py --library <your score library>
 ```
 
 `work/` is a gitignored output directory, the classification table and benchmark reports are written there.
