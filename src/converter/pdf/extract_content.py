@@ -3,8 +3,6 @@
 Guitar Pro exports its PDFs through Qt, which writes one Tj per glyph with an
 explicit Td before it. That makes every fret number, chord name and lyric
 recoverable as (x, y, char) with no OCR.
-
-Usage: python pdftext.py <file.pdf> [--page N]
 """
 
 import re

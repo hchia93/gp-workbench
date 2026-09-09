@@ -4,16 +4,16 @@ Guitar Pro draws the rhythm under the TAB staff: a stem per note, a flag glyph
 for an unbeamed note, and beams across a beamed group. Two thirds of the library
 is TAB-only, so this is the path that covers most systems.
 
-Usage: python tabrhythm.py <file.pdf> [--page N] [--gp <file.gp>]
+Usage: gp-workbench rhythm <file.pdf> [--page N]
 """
 
 import bisect
 from collections import defaultdict
 from fractions import Fraction
 
-from src.converter.pdf.extractor import extract
-from src.converter.pdf.rhythm_notation import angle, DENOM
-from src.converter.pdf.staff import attach_notes, dedupe, find_barlines, find_staves, pair_systems
+from src.converter.pdf.extract_content import extract
+from src.converter.pdf.read_rhythm_notation import angle, DENOM
+from src.converter.pdf.find_staff import attach_notes, dedupe, find_barlines, find_staves, pair_systems
 
 FLAG_LO, FLAG_HI = 0xE240, 0xE24F     # flag8thUp .. flag128thDown
 AUG_DOT = ""

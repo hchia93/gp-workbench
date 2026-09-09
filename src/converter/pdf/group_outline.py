@@ -3,8 +3,6 @@
 Files on the image route draw their fret numbers as outlines rather than text.
 The same digit is emitted from the same path data every time, so identical
 glyphs hash to the same signature and only need to be named once.
-
-Usage: python outline.py <file.pdf> [--page N] [--survey]
 """
 
 import csv
@@ -13,8 +11,8 @@ import os
 import re
 from collections import Counter, defaultdict
 
-from src.converter.pdf.extractor import extract
-from src.converter.pdf.staff import find_barlines, find_staves, pair_systems
+from src.converter.pdf.extract_content import extract
+from src.converter.pdf.find_staff import find_barlines, find_staves, pair_systems
 
 JOIN_TOL = 1.2          # endpoints closer than this belong to one outline
 GRID_W, GRID_H = 7, 10  # normalised bitmap the shape signature is taken from

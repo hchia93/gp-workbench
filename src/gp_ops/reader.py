@@ -3,7 +3,7 @@
 Used as ground truth: when a song has both a .gp and the PDF exported from it,
 the .gp says exactly what the PDF's ink is supposed to mean.
 
-Usage: python gpread.py <file.gp> [--measures A-B]
+Usage: gp-workbench gp <file.gp> [--measures A-B]
 """
 
 import re

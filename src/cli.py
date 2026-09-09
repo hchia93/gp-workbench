@@ -13,12 +13,12 @@ import sys
 from collections import defaultdict
 from fractions import Fraction
 
-from src.converter.pdf.router import probe_route
+from src.converter.pdf.probe_route import probe_route
 from src.converter.converter import convert
 from src.gp_ops.reader import read as read_gp
 from src.validator.verifier import check as verify_gp
-from src.converter.pdf.rhythm_tab import analyse as analyse_rhythm, length_of, measure_sequence
-from src.converter.pdf.staff import analyse as analyse_staff
+from src.converter.pdf.read_rhythm_tab import analyse as analyse_rhythm, length_of, measure_sequence
+from src.converter.pdf.find_staff import analyse as analyse_staff
 
 
 def cmd_route(args):

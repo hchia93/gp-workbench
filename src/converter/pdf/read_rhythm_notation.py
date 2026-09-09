@@ -3,16 +3,14 @@
 Guitar Pro draws a beam as a filled parallelogram, so each beam reaches the
 content stream as a pair of near-parallel edges. The number of beams covering a
 stem is what distinguishes an eighth from a sixteenth.
-
-Usage: python rhythm.py <file.pdf> [--page N]
 """
 
 import math
 from collections import Counter, defaultdict
 from fractions import Fraction
 
-from src.converter.pdf.extractor import extract
-from src.converter.pdf.staff import find_staves, pair_systems, find_barlines, attach_notes
+from src.converter.pdf.extract_content import extract
+from src.converter.pdf.find_staff import find_staves, pair_systems, find_barlines, attach_notes
 
 BEAM_REACH = 24.0        # how far outside the staff a beam can sit
 BEAM_MAX_WIDTH = 0.35    # as a fraction of the staff's own x extent

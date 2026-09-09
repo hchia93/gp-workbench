@@ -1,6 +1,6 @@
 """Split a track into stems and keep the guitar one.
 
-    python src/tools/chord-finder/stem_split.py --in build/audio/raw.webm --seconds 40
+    python src/tools/chord-finder/split_stem.py --in build/audio/raw.webm --seconds 40
 
 Needs demucs on a CPU-only torch, both installable without admin rights:
     pip install --user torch torchaudio --index-url https://download.pytorch.org/whl/cpu

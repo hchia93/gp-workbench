@@ -4,7 +4,7 @@ The question that decides the route is not the producer string, it is whether
 the fret numbers come back out of the text layer. So this runs the text-layer
 reader and records what it got.
 
-    python src/tools/survey/surveyor.py --library <path/to/scores> --csv work/routes.tsv
+    python src/tools/survey_route.py --library <path/to/scores> --csv work/routes.tsv
 """
 
 import argparse
@@ -16,9 +16,9 @@ import sys
 
 sys.path.insert(0, ".")
 
-from src.converter.pdf.router import EMPTY, IMAGE_ROUTE, TEXT_ROUTE, probe_route   # noqa: E402
-from src.converter.pdf.extractor import extract                                    # noqa: E402
-from src.converter.pdf.staff import find_barlines, find_staves, pair_systems   # noqa: E402
+from src.converter.pdf.probe_route import EMPTY, IMAGE_ROUTE, TEXT_ROUTE, probe_route   # noqa: E402
+from src.converter.pdf.extract_content import extract                                    # noqa: E402
+from src.converter.pdf.find_staff import find_barlines, find_staves, pair_systems   # noqa: E402
 
 
 def producer(data):

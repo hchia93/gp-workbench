@@ -19,8 +19,8 @@ import sys
 sys.path.insert(0, ".")
 
 from src.gp_ops.reader import read                       # noqa: E402
-from src.converter.pdf.rhythm_notation import read_time_signature   # noqa: E402
-from src.converter.pdf.rhythm_tab import analyse, measure_sequence  # noqa: E402
+from src.converter.pdf.read_rhythm_notation import read_time_signature   # noqa: E402
+from src.converter.pdf.read_rhythm_tab import analyse, measure_sequence  # noqa: E402
 
 
 def pages_of(path):

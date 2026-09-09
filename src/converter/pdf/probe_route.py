@@ -6,14 +6,14 @@ Producer strings and image counts only correlate with the answer. The test that
 actually decides it is running the text-layer reader and seeing whether TAB
 digits come back, so that is what this does.
 
-Usage: python classify.py [--csv routes.tsv] [--limit N]
+Usage: gp-workbench route <file.pdf>
 """
 
 import re
 from collections import Counter, defaultdict
 
-from src.converter.pdf.extractor import extract
-from src.converter.pdf.staff import attach_notes, find_barlines, find_staves, pair_systems
+from src.converter.pdf.extract_content import extract
+from src.converter.pdf.find_staff import attach_notes, find_barlines, find_staves, pair_systems
 
 
 TEXT_ROUTE = "text-layer"      # fret digits recoverable, deterministic

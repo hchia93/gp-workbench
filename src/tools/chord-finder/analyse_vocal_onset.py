@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Where each sung syllable starts, on the bar grid, from the vocal stem.
 
-    python src/tools/chord-finder/vocal_syllables.py vocals.wav --bpm 72.1 --phase 0.045
+    python src/tools/chord-finder/analyse_vocal_onset.py vocals.wav --bpm 72.1 --phase 0.045
         [--grid0 22] [--end 32] [--json out.json]
 
 Guitar Pro hands lyric tokens to note beats in order, so lyrics land right only

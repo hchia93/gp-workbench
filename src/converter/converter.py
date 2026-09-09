@@ -14,9 +14,9 @@ import os
 import re
 
 from src.gp_ops.writer import Beat, Note, build
-from src.converter.pdf.rhythm_tab import analyse, measure_sequence
+from src.converter.pdf.read_rhythm_tab import analyse, measure_sequence
 
-# gpwrite spells note values the same way the decoders do
+# gp_ops.writer spells note values the same way the decoders do
 DOTTED = {0: False, 1: True}
 
 
@@ -34,7 +34,7 @@ def decode(pdf):
         except Exception:
             continue
         if signature is None:
-            from src.converter.pdf.rhythm_notation import read_time_signature
+            from src.converter.pdf.read_rhythm_notation import read_time_signature
             signature = read_time_signature(staves, glyphs, text=True)[1]
         for staff, cols, beams, flags in systems:
             measures += measure_sequence(staff, cols, signature)
@@ -42,7 +42,7 @@ def decode(pdf):
 
 
 def to_song(measures, signature, title, artist, tempo=90, capo=0):
-    """Shape the decoded measures the way gpwrite.build expects."""
+    """Shape the decoded measures the way gp_ops.writer.build expects."""
     bars = []
     for seq in measures:
         beats = []
@@ -52,7 +52,7 @@ def to_song(measures, signature, title, artist, tempo=90, capo=0):
                 continue
             beats.append(Beat(col["value"], notes, dotted=col["dots"] > 0))
         if not beats:
-            # gpwrite has no rest yet, so an empty measure is written as silence
+            # gp_ops.writer has no rest yet, so an empty measure is written as silence
             beats.append(Beat("Whole", [Note(6, 0, muted=True)]))
         bars.append({"beats": beats})
     return {"title": title, "artist": artist, "tabber": "gp-workbench",

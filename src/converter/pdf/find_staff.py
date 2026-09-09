@@ -1,15 +1,15 @@
 """Reconstruct staff geometry and TAB content from a text-layer PDF.
 
-Builds on pdftext.py. Everything here is deterministic: staff lines, barlines and
+Builds on extract_content.py. Everything here is deterministic: staff lines, barlines and
 fret numbers all come from the PDF's own vector and text operators, so there is
 no recognition step and no error to measure.
 
-Usage: python score.py <file.pdf> [--page N] [--dump]
+Usage: gp-workbench read <file.pdf> [--page N] [--dump]
 """
 
 from collections import defaultdict
 
-from src.converter.pdf.extractor import extract
+from src.converter.pdf.extract_content import extract
 
 LINE_MIN_COVERAGE = 150.0   # points of horizontal ink needed to call a y a staff line
 STAFF_GAP = 9.0             # y distance that still counts as the same staff

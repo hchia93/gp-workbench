@@ -69,7 +69,7 @@ Property 在 `<Properties>` 内按字母序排列，生成时保持该顺序。
 
 ## PDF 分类结果
 
-样本 169 个文件，`probe.py` 产出。
+样本 169 个文件，`src/tools/survey_route.py` 产出。
 
 | 类别 | 数量 | 判定依据 | 转换路径 |
 | --- | --- | --- | --- |
@@ -87,7 +87,7 @@ gpif 没有公开 schema，没有 validator。Guitar Pro 对坏输入是降级�
 
 实证: 34 个由 Guitar Pro 自己生成的文件里，17 个存在小节时值不闭合（beats 加总不等于拍号），GP 照常打开。时值错误不会被 GP 拦截。
 
-对策是 `verify.py`，检查两件 GP 不会报的事: 悬空 id 引用、小节时值不闭合。
+对策是 `src/validator/verifier.py`，检查两件 GP 不会报的事: 悬空 id 引用、小节时值不闭合。
 
 ## 工具清单
 
@@ -95,10 +95,10 @@ gpif 没有公开 schema，没有 validator。Guitar Pro 对坏输入是降级�
 
 | 文件 | 作用 | 备注 |
 | --- | --- | --- |
-| `probe.py` | 扫描全库 PDF 分类，产出 `probe.tsv` | 只读，幂等 |
-| `gpwrite.py` | 模板法生成 `.gp` | 只重写 score.gpif，其余条目原样复制 |
+| `src/tools/survey_route.py` | 扫描全库 PDF 分类，产出 `work/routes.tsv` | 只读，幂等 |
+| `src/gp_ops/writer.py` | 模板法生成 `.gp` | 只重写 score.gpif，其余条目原样复制 |
 | `kongangqu.py` | 《空港曲》曲谱数据 + 生成入口 | pattern 来自 `笔技.txt` |
-| `verify.py` | 校验引用图与时值闭合 | 支持多文件，失败返回非零 |
+| `src/validator/verifier.py` | 校验引用图与时值闭合 | 支持多文件，失败返回非零 |
 
 ## 《空港曲》验证结果
 
@@ -161,7 +161,7 @@ gpif 没有公开 schema，没有 validator。Guitar Pro 对坏输入是降级�
 | 行为 | 观测 | 影响 |
 | --- | --- | --- |
 | 保存时去重 | 生成的 144 个 Note 被收敛到 17 个，Beat 之间复用 id | 生成器不必自己去重 |
-| 容忍时值不闭合 | 34 个由 GP 自己生成的文件里，17 个有 beats 加总不等于拍号的小节，照常打开 | 时值错误不会被 GP 拦截，必须靠 `verify.py` |
+| 容忍时值不闭合 | 34 个由 GP 自己生成的文件里，17 个有 beats 加总不等于拍号的小节，照常打开 | 时值错误不会被 GP 拦截，必须靠 `src/validator/verifier.py` |
 
 ## Token 实测
 
