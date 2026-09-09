@@ -1,12 +1,12 @@
 # Metadata and tool config only. The package is run from the repo, not installed:
-#   python score-pdf-to-gp.py <command>
+#   python gp-workbench.py <command>
 # Top-level names like src/pdf and src/score would collide in site-packages, so
 # there is deliberately no console_scripts entry.
 
 [project]
-name = "score-pdf-to-gp"
-version = "0.1.0"
-description = "Turn guitar score PDFs into Guitar Pro .gp files without OCR"
+name = "gp-workbench"
+version = "2.0.0"
+description = "Guitar Pro 8 workbench: PDF decoding and stem transcription into draft .gp, then in-place annotation"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

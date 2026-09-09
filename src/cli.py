@@ -1,11 +1,11 @@
 """Command line entry point.
 
-    score-pdf-to-gp route   <file.pdf>              which decoder the file needs
-    score-pdf-to-gp read    <file.pdf> [--page N]   staves, barlines, TAB notes
-    score-pdf-to-gp rhythm  <file.pdf> [--page N]   note values per measure
-    score-pdf-to-gp gp      <file.gp>  [--measures A-B]   read a .gp back
-    score-pdf-to-gp verify  <file.gp>...            dangling refs and bar duration
-    score-pdf-to-gp convert <file.pdf> --template <any.gp> -o <out.gp>
+    gp-workbench route   <file.pdf>              which decoder the file needs
+    gp-workbench read    <file.pdf> [--page N]   staves, barlines, TAB notes
+    gp-workbench rhythm  <file.pdf> [--page N]   note values per measure
+    gp-workbench gp      <file.gp>  [--measures A-B]   read a .gp back
+    gp-workbench verify  <file.gp>...            dangling refs and bar duration
+    gp-workbench convert <file.pdf> --template <any.gp> -o <out.gp>
 """
 
 import argparse
@@ -13,12 +13,12 @@ import sys
 from collections import defaultdict
 from fractions import Fraction
 
-from .classify import probe_route
-from .convert import convert
-from .gp.read import read as read_gp
-from .gp.verify import check as verify_gp
-from .score.rhythm_tab import analyse as analyse_rhythm, length_of, measure_sequence
-from .score.staff import analyse as analyse_staff
+from src.converter.pdf.router import probe_route
+from src.converter.converter import convert
+from src.gp_ops.reader import read as read_gp
+from src.validator.verifier import check as verify_gp
+from src.converter.pdf.rhythm_tab import analyse as analyse_rhythm, length_of, measure_sequence
+from src.converter.pdf.staff import analyse as analyse_staff
 
 
 def cmd_route(args):
@@ -85,7 +85,7 @@ def cmd_convert(args):
     print(f"  time {info['time']}   measures {info['measures']}   "
           f"beats {info['beats']}   notes {info['notes']}")
     print(f"  -> {info['out']}")
-    print("  open it in Guitar Pro; a corrected save becomes ground truth for tools/bench/bench.py")
+    print("  open it in Guitar Pro; a corrected save becomes ground truth for src/validator/benchmarker.py")
 
 
 def cmd_verify(args):
@@ -94,7 +94,7 @@ def cmd_verify(args):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="score-pdf-to-gp", description=__doc__,
+    ap = argparse.ArgumentParser(prog="gp-workbench", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="command", required=True)
 

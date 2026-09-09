@@ -1,4 +1,4 @@
-# score-pdf-to-gp
+# gp-workbench
 
 **English** | [中文](README-cn.md)
 
@@ -6,11 +6,20 @@
 ![Platform: Cross-platform](https://img.shields.io/badge/Platform-Cross--platform-blue.svg)
 ![Status: Research](https://img.shields.io/badge/Status-Research-orange.svg)
 
-Converts guitar score PDFs into Guitar Pro `.gp` files. For PDFs exported by notation software, fret numbers, staff geometry, and rhythm marks can all be extracted exactly from the PDF's own text and vector operators, no OCR, no LLM.
+Guitar Pro 8 workbench. Two sources, **A audio** and **B image/PDF**, each produce a draft `.gp`. The draft is finished in `src/tabulator/` (`init_tabulate → apply_style → inject_chord_diagram → inject_lyrics`), which reads and writes through `src/gp_ops/` (reader / writer / patcher).
 
-## What it solves
+<div align="center">
 
-Entering one song into Guitar Pro by hand takes two to three hours. Existing tools all hit at least one of: upload required, paywalled, standard notation only with no tablature, or OCR-based and therefore inherently lossy.
+| Source | Input | Draft comes from | Recognition |
+|---|---|---|---|
+| A · Audio | A track URL | demucs guitar stem, basic-pitch transcription, fret mapping | Model based, draft is hand-edited afterwards |
+| B · Image/PDF | Score PDF exported by notation software | Text layer and vector operators of the PDF itself | None, no OCR, no LLM |
+
+</div>
+
+## Why
+
+Entering one song into Guitar Pro by hand takes two to three hours. Existing tools all hit at least one of: upload required, paywalled, standard notation only with no tablature, or OCR-based and therefore lossy.
 
 <div align="center">
 
@@ -20,71 +29,104 @@ Entering one song into Guitar Pro by hand takes two to three hours. Existing too
 | oemer | ✓ | ✓ | ✗ | ✗ | Standard notation OMR, needs ML weights |
 | SmartScore | ✓ | ✗ | Partial | ✗ | Commercial software, recognition driven |
 | Online PDF to MusicXML services | ✗ | Limited | Partial | ✗ | Upload required |
-| **score-pdf-to-gp** | **✓** | **✓** | **✓** | **✓** | Decodes PDF operators directly, no recognition |
+| **gp-workbench** | **✓** | **✓** | **✓** | **✓** | Decodes PDF operators directly |
 
 </div>
 
-The key difference: mainstream tools all perform recognition, while inside a PDF exported by notation software this information already exists exactly, nobody just reads it.
+Inside a PDF exported by notation software the fret numbers, staff geometry and rhythm marks already exist exactly. Source B reads them instead of recognizing them.
 
-## Who it's for
+## Generation Route
 
-- **People sitting on a pile of guitar score PDFs.** A score on disk is dead, not searchable, not transposable, not refingerable. It becomes usable only after conversion to `.gp`
-- **People who want the re-entry time back.** Even at seventy percent correct, you edit on top of a skeleton instead of typing for two to three hours from zero
-- **People who need verifiable results.** Every measure's durations must sum to the time signature, and if it does not close, it is wrong. That self-check needs no manual comparison
-
-## Usage
-
-Run from the repository:
+### A. Audio → .gp
 
 ```bash
-python score-pdf-to-gp.py route   <file.pdf>
-python score-pdf-to-gp.py read    <file.pdf> [--page N] [--dump]
-python score-pdf-to-gp.py rhythm  <file.pdf> [--page N]
-python score-pdf-to-gp.py gp      <file.gp>  [--measures A-B]
-python score-pdf-to-gp.py verify  <file.gp>...
+python src/tools/chord-finder/fetch_audio.py --url <url>
+python src/tools/chord-finder/stem_split.py --in build/audio/raw.webm --seconds 40
+python src/tools/chord-finder/transcribe_stem.py build/stems/htdemucs_6s/input/guitar.wav <template.gp> build/gp/draft.gp --start 5.5 --end 32
 ```
 
-Commands:
+<div align="center">
+
+| Step | Script | Output |
+|---|---|---|
+| Fetch | `fetch_audio.py` | Raw download under `build/audio/` plus a mono wav |
+| Split | `stem_split.py` | demucs `htdemucs_6s` stems, `guitar.wav` and `vocals.wav` under `build/stems/` |
+| Transcribe | `transcribe_stem.py` | basic-pitch dual-threshold transcription, sixteenth-grid fit, fret mapping, T-23 fingering, draft `.gp` |
+
+</div>
+
+### B. Image/PDF → .gp
+
+Run from the repository root:
+
+```bash
+python gp-workbench.py route   <file.pdf>
+python gp-workbench.py read    <file.pdf> [--page N] [--dump]
+python gp-workbench.py rhythm  <file.pdf> [--page N]
+python gp-workbench.py convert <file.pdf> --template <any.gp> -o out.gp [--title T] [--artist A] [--tempo N] [--capo N]
+python gp-workbench.py gp      <file.gp>  [--measures A-B]
+python gp-workbench.py verify  <file.gp>...
+```
 
 <div align="center">
 
 | Command | Purpose |
 |---|---|
-| `python score-pdf-to-gp.py route <file.pdf>` | Report which decode route this PDF needs |
-| `python score-pdf-to-gp.py read <file.pdf> [--page N] [--dump]` | Staves, barlines, TAB notes |
-| `python score-pdf-to-gp.py rhythm <file.pdf> [--page N]` | Duration sequence per measure |
-| `python score-pdf-to-gp.py gp <file.gp> [--measures A-B]` | Read a `.gp` back |
-| `python score-pdf-to-gp.py verify <file.gp>...` | Check dangling references and measure duration closure |
+| `route` | Report which decode route this PDF needs |
+| `read` | Staves, barlines, TAB notes |
+| `rhythm` | Duration sequence per measure |
+| `convert` | Decode a PDF and write a `.gp`, non-XML zip entries copied from `--template` |
+| `gp` | Read a `.gp` back as measures |
+| `verify` | Check dangling references and measure duration closure |
 
 </div>
 
-Tool scripts:
+Library tools:
 
 ```bash
-python tools/survey/survey.py --library <path> --csv work/routes.tsv
-python tools/bench/bench.py --library <path>
-python tools/bench/bench.py --library <path> --detail "song name"
+python src/tools/survey/surveyor.py --library <path> --csv work/routes.tsv
+python src/validator/benchmarker.py --library <path>
+python src/validator/benchmarker.py --library <path> --detail "song name"
 ```
 
-## How it works
+Either draft then goes through `src/tabulator/`. Open the draft in Guitar Pro, fix it by hand, save, then run the scripts in order. Every script takes `in.gp out.gp`, edits `Content/score.gpif` as text through `src/gp_ops/patcher.py` and copies every other zip entry verbatim.
 
-A `.gp` is a ZIP package, and its core data `Content/score.gpif` is plain XML. The writer uses a template approach, rewriting only this XML and copying every other entry verbatim, so the undocumented binary blocks stay valid.
-
-The reader splits into three routes by what the PDF can give. The criterion is not the PDF's Producer field, it is whether fret numbers can be pulled from the text layer:
+```bash
+python src/tabulator/init_tabulate.py in.gp out.gp --title ... --artist ... --tempo 72 --key D
+python src/tabulator/apply_style.py in.gp out.gp [--from reference.gp] [--format gp7|gp8]
+python src/tabulator/inject_chord_diagram.py in.gp out.gp [--chart]
+python src/tools/chord-finder/vocal_syllables.py vocals.wav --bpm 72.1 --phase 0.045 --grid0 22 --json build/vox.json
+python src/tabulator/inject_lyrics.py in.gp out.gp lyrics.json [--raw]
+```
 
 <div align="center">
 
-| Route | Files | Share | Needs recognition |
-|---|---|---|---|
-| text-layer | 38 | 22.5% | No |
-| image | 46 | 27.2% | No, shapes are limited and identical point by point, one annotation pass suffices |
-| no-staff | 85 | 50.3% | Yes |
+| Script | Writes |
+|---|---|
+| `init_tabulate.py` | Header: title, artist, album, tabber, tempo, key, capo, tuning |
+| `apply_style.py` | Style triplet `BinaryStylesheet`, `LayoutConfiguration`, `PartConfiguration` from `resource/style/<gp7\|gp8>/`, format read from the target's `<GPVersion>`. `--from` copies the three entries from any `.gp` instead, `--format` forces one |
+| `inject_chord_diagram.py` | Chords inferred per measure from the notes, `DiagramCollection` entries, `<Chord>` marks where the chord changes, `--chart` fills the chord palette at the top of the page |
+| `vocal_syllables.py` | Syllable onsets from the vocal stem as `measure.beat`, the placement basis for lyrics, source A only |
+| `inject_lyrics.py` | Lyric line, one token per CJK character, a space skips one beat |
 
 </div>
 
-The decode chain for `text-layer`: the content stream interpreter tracks the CTM and the text matrix to get positioned glyphs, the ToUnicode CMap restores characters, path operators give staff lines and barlines, the baseline of a fret number sits at a fixed constant below its owning string line, and after calibration the string assignment is a single nearest-neighbor match.
+Templates: the repository ships no `.gp`. `--template` takes any `.gp` of your own. `apply_style.py` needs none, the bundled sets under `resource/style/` cover gp7 and gp8.
 
-Rhythm has two encodings depending on export settings: when standard notation is present, read stems and beam layers, and in TAB-only exports, read the flag glyphs and beams below the staff.
+## Dependencies
+
+<div align="center">
+
+| Source | Install |
+|---|---|
+| B Image/PDF | Python 3.10 or newer, standard library only |
+| A Audio, fetch and analysis | `pip install --user numpy scipy yt-dlp imageio-ffmpeg` |
+| A Audio, stem split | `pip install --user torch torchaudio --index-url https://download.pytorch.org/whl/cpu` then `pip install --user demucs` |
+| A Audio, transcription | `pip install --user onnxruntime` then `pip install --user --no-deps basic-pitch` then `pip install --user pretty_midi mir_eval librosa resampy` |
+
+</div>
+
+Constraints: on Python 3.13 basic-pitch must be installed with `--no-deps` and its dependencies added separately, the plain install hits a dependency conflict. torch and demucs go in separate pip commands.
 
 ## Accuracy
 
@@ -118,54 +160,70 @@ Best single-song results: `南山南` notes 58 / 63, `雪落下的声音` notes 
 ## Source layout
 
 ```
+gp-workbench.py                        CLI entry: route / read / rhythm / gp / convert / verify
 src/
-├── pdf/        PDF content stream: positioned glyphs and vector segments
-├── score/      staff geometry, TAB notes, rhythm from beams and flags
-├── gp/         .gp read, write and verify
-├── classify.py which route a PDF needs
-└── cli.py      command line entry
+├── cli.py
+├── converter/
+│   ├── converter.py                   PDF decode result -> .gp
+│   └── pdf/
+│       ├── router.py                  which decode route a PDF needs
+│       ├── extractor.py               positioned glyphs from the text layer
+│       ├── staff.py                   staff geometry and TAB content
+│       ├── outline.py                 vector strokes inside a TAB staff clustered into glyphs
+│       ├── rhythm_notation.py         durations from stems and beams of the standard staff
+│       └── rhythm_tab.py              durations from the TAB staff when no standard staff exists
+├── gp_ops/
+│   ├── reader.py                      .gp -> per-measure structure
+│   ├── writer.py                      template writer, rebuilds only the id tables of score.gpif
+│   └── patcher.py                     in-place edit, gpif as text, other zip entries copied
+├── validator/
+│   ├── verifier.py                    dangling references, measure durations
+│   ├── benchmarker.py                 regression against songs that have both .gp and exported PDF
+│   └── test/                          test cases
+├── tabulator/
+│   ├── init_tabulate.py               header fields
+│   ├── apply_style.py                 style triplet from resource/style/ or a reference .gp
+│   ├── inject_chord_diagram.py        chord diagrams and <Chord> marks
+│   └── inject_lyrics.py               lyric tokens
+└── tools/
+    ├── chord-finder/
+    │   ├── fetch_audio.py             yt-dlp -> mono wav
+    │   ├── stem_split.py              demucs htdemucs_6s, guitar stem
+    │   ├── transcribe_stem.py         basic-pitch -> grid -> frets -> draft .gp
+    │   └── vocal_syllables.py         syllable onsets -> measure.beat
+    └── survey/
+        └── surveyor.py                classify a whole PDF library by decode route
 
-tools/
-├── survey/       classify a whole library
-├── bench/        regression against songs that have both .gp and PDF
-├── fetch_audio/  fetch an audio track (audio chain)
-└── ab_render/    A/B clip rendering (audio chain)
-
+resource/
+└── style/
+    ├── gp7/                           BinaryStylesheet, LayoutConfiguration, PartConfiguration saved by Guitar Pro 7
+    └── gp8/                           same three, saved by Guitar Pro 8 after loading a .gps
 doc/
-├── plan.html   the working plan, open in a browser
-└── *.md        research records
+├── plan.html                          working plan, open in a browser
+└── *.md                               research records
+Generate/Attempt-02/记录.md            audio route log
 ```
 
-Modules import each other relatively, and `score-pdf-to-gp.py` adds the repository root to `sys.path` before calling `src.cli`. No console script is provided on purpose, because top-level names like `src/pdf` and `src/score` would collide once installed into site-packages.
+Namespace packages, no `__init__.py`. Every script runs from the repository root as `python <path>`; `gp-workbench.py` adds the root to `sys.path` before calling `src.cli`.
 
-`tools/bench/bench.py` is the most important one. It runs after every decoder change, because tuning against a single file overfits: one run hit 33% on a single file while the whole library sat at 19%.
+`src/validator/benchmarker.py` runs after every decoder change, because tuning against a single file overfits: one run hit 33% on a single file while the whole library sat at 19%.
 
 ## Development
 
-Requires Python 3.10 or newer, no third-party dependencies, no install step.
-
 ```bash
 git clone <repo>
-cd score-pdf-to-gp
-python tools/bench/bench.py --library <your score library>
+cd gp-workbench
+python src/validator/benchmarker.py --library <your score library>
 ```
 
-`work/` is a gitignored output directory, the classification table and benchmark reports are written there.
+Output directories, both gitignored:
 
-Planning document: `doc/plan.html`, open it in a browser. Research records are the markdown files under `doc/`.
+- `work/`: survey tables, benchmark reports
+- `build/`: audio, stems, draft `.gp`
 
-## Roadmap
+New style set: in Guitar Pro 8 load a `.gps`, save the score, then extract `BinaryStylesheet`, `LayoutConfiguration`, `PartConfiguration` from that `.gp` into `resource/style/gp8/`. Guitar Pro 8 only honors stylesheets it compiled itself: a GP7-era `BinaryStylesheet` pasted into a GP8 file opens but draws no chord diagrams, and `.gps` is text `key=value`, not pasteable.
 
-<div align="center">
-
-| Version | Contents |
-|---|---|
-| v0.1 | Text-layer route, note and duration decoding, regression benchmark **(current)** |
-| v0.2 | Fix measure splitting and short hooks in beam groups, accuracy target 70% |
-| v0.3 | Vector outline route, coverage target 50% |
-| TBD | Pure bitmap route |
-
-</div>
+Planning document: `doc/plan.html`. Research records: `doc/*.md`, audio route log in `Generate/Attempt-02/记录.md`.
 
 ## License
 

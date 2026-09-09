@@ -1,4 +1,4 @@
-# score-pdf-to-gp
+# gp-workbench
 
 [English](README.md) | **中文**
 
@@ -6,11 +6,20 @@
 ![Platform: Cross-platform](https://img.shields.io/badge/Platform-Cross--platform-blue.svg)
 ![Status: Research](https://img.shields.io/badge/Status-Research-orange.svg)
 
-把吉他谱 PDF 转成 Guitar Pro `.gp` 文件。对由制谱软件导出的 PDF，品位数字、谱表几何、节奏记号全部能从 PDF 自身的文本与矢量算子精确取出，不需要 OCR，也不需要任何 LLM。
+Guitar Pro 8 工作台。两个源头 **A 音频** 与 **B 图像·PDF** 各自出草稿 `.gp`，草稿进 `src/tabulator/` 收尾（`init_tabulate → apply_style → inject_chord_diagram → inject_lyrics`），tabulator 底下靠 `src/gp_ops/`（reader / writer / patcher）读写。
 
-## 它解决什么
+<div align="center">
 
-手工把一首谱敲进 Guitar Pro 要两三个小时。现有工具都至少踩中一条：需要上传、要付费、只做五线谱不做六线谱、或者依赖 OCR 因而必然带误差。
+| 源头 | 输入 | 草稿来源 | 识别 |
+|---|---|---|---|
+| A · 音频 | 一个音轨链接 | demucs 吉他分轨，basic-pitch 转录，品位映射 | 模型驱动，草稿之后手改 |
+| B · 图像·PDF | 制谱软件导出的吉他谱 PDF | PDF 自身的文本层与矢量算子 | 无，不用 OCR，不用 LLM |
+
+</div>
+
+## 为什么
+
+手工把一首谱敲进 Guitar Pro 要两三个小时。现有工具都至少踩中一条：需要上传、要付费、只做五线谱不做六线谱、或者依赖 OCR 因而带误差。
 
 <div align="center">
 
@@ -20,71 +29,104 @@
 | oemer | ✓ | ✓ | ✗ | ✗ | 五线谱 OMR，需要 ML 权重 |
 | SmartScore | ✓ | ✗ | 部分 | ✗ | 商业软件，识别为主 |
 | PDF to MusicXML 类在线服务 | ✗ | 有限 | 部分 | ✗ | 需要上传 |
-| **score-pdf-to-gp** | **✓** | **✓** | **✓** | **✓** | 从 PDF 算子直接解码，不识别 |
+| **gp-workbench** | **✓** | **✓** | **✓** | **✓** | 从 PDF 算子直接解码 |
 
 </div>
 
-关键区别：主流工具都在做识别，而制谱软件导出的 PDF 里，这些信息本来就是精确存在的，只是没人去读。
+制谱软件导出的 PDF 里，品位数字、谱表几何、节奏记号本来就精确存在。源头 B 直接读，不识别。
 
-## 适合谁
+## Generation Route
 
-- **手上有一批吉他谱 PDF 的人。** 谱在硬盘里是死的，不可检索不可改调不可换指法。转成 `.gp` 之后才能用
-- **想省下重新录入时间的人。** 就算只有七成正确，也是在一个骨架上改，而不是从零敲两三个小时
-- **需要可验证结果的人。** 每个小节的时值加总必须等于拍号，不闭合就是错。这个自检不需要人工比对
-
-## 使用
-
-从仓库直接运行：
+### A. 音频 → .gp
 
 ```bash
-python score-pdf-to-gp.py route   <file.pdf>
-python score-pdf-to-gp.py read    <file.pdf> [--page N] [--dump]
-python score-pdf-to-gp.py rhythm  <file.pdf> [--page N]
-python score-pdf-to-gp.py gp      <file.gp>  [--measures A-B]
-python score-pdf-to-gp.py verify  <file.gp>...
+python src/tools/chord-finder/fetch_audio.py --url <url>
+python src/tools/chord-finder/stem_split.py --in build/audio/raw.webm --seconds 40
+python src/tools/chord-finder/transcribe_stem.py build/stems/htdemucs_6s/input/guitar.wav <template.gp> build/gp/draft.gp --start 5.5 --end 32
 ```
 
-命令：
+<div align="center">
+
+| 步骤 | 脚本 | 产出 |
+|---|---|---|
+| 抓取 | `fetch_audio.py` | 原始下载落在 `build/audio/`，另出单声道 wav |
+| 分轨 | `stem_split.py` | demucs `htdemucs_6s` 六轨，`guitar.wav` 与 `vocals.wav` 落在 `build/stems/` |
+| 转录 | `transcribe_stem.py` | basic-pitch 双阈值转录，十六分网格拟合，品位映射，T-23 手型，草稿 `.gp` |
+
+</div>
+
+### B. 图像·PDF → .gp
+
+从仓库根运行：
+
+```bash
+python gp-workbench.py route   <file.pdf>
+python gp-workbench.py read    <file.pdf> [--page N] [--dump]
+python gp-workbench.py rhythm  <file.pdf> [--page N]
+python gp-workbench.py convert <file.pdf> --template <any.gp> -o out.gp [--title T] [--artist A] [--tempo N] [--capo N]
+python gp-workbench.py gp      <file.gp>  [--measures A-B]
+python gp-workbench.py verify  <file.gp>...
+```
 
 <div align="center">
 
 | 命令 | 作用 |
 |---|---|
-| `python score-pdf-to-gp.py route <file.pdf>` | 报告这个 PDF 需要哪条解码路线 |
-| `python score-pdf-to-gp.py read <file.pdf> [--page N] [--dump]` | 谱表、小节线、TAB 音符 |
-| `python score-pdf-to-gp.py rhythm <file.pdf> [--page N]` | 每小节的时值序列 |
-| `python score-pdf-to-gp.py gp <file.gp> [--measures A-B]` | 反读一个 `.gp` |
-| `python score-pdf-to-gp.py verify <file.gp>...` | 检查悬空引用与小节时值闭合 |
+| `route` | 报告这个 PDF 需要哪条解码路线 |
+| `read` | 谱表、小节线、TAB 音符 |
+| `rhythm` | 每小节的时值序列 |
+| `convert` | 解码 PDF 并写出 `.gp`，非 XML 的 zip 条目从 `--template` 复制 |
+| `gp` | 反读一个 `.gp` 成逐小节结构 |
+| `verify` | 检查悬空引用与小节时值闭合 |
 
 </div>
 
-工具脚本：
+曲库工具：
 
 ```bash
-python tools/survey/survey.py --library <path> --csv work/routes.tsv
-python tools/bench/bench.py --library <path>
-python tools/bench/bench.py --library <path> --detail "song name"
+python src/tools/survey/surveyor.py --library <path> --csv work/routes.tsv
+python src/validator/benchmarker.py --library <path>
+python src/validator/benchmarker.py --library <path> --detail "song name"
 ```
 
-## 工作原理
+两边的草稿之后都进 `src/tabulator/`。在 Guitar Pro 里打开草稿手改，保存，再按顺序跑脚本。每个脚本都是 `in.gp out.gp`，经 `src/gp_ops/patcher.py` 把 `Content/score.gpif` 当文本改，其余 zip 条目原样复制。
 
-`.gp` 是 ZIP 包，核心数据 `Content/score.gpif` 是纯 XML。写入端用模板法，只重写这个 XML，其余条目原样复制，所以那些没有公开文档的二进制块保持有效。
-
-读取端按 PDF 能给出什么分三条路线。判据不是 PDF 的 Producer 字段，而是品位数字能否从文本层取出：
+```bash
+python src/tabulator/init_tabulate.py in.gp out.gp --title ... --artist ... --tempo 72 --key D
+python src/tabulator/apply_style.py in.gp out.gp [--from reference.gp] [--format gp7|gp8]
+python src/tabulator/inject_chord_diagram.py in.gp out.gp [--chart]
+python src/tools/chord-finder/vocal_syllables.py vocals.wav --bpm 72.1 --phase 0.045 --grid0 22 --json build/vox.json
+python src/tabulator/inject_lyrics.py in.gp out.gp lyrics.json [--raw]
+```
 
 <div align="center">
 
-| 路线 | 文件数 | 占比 | 是否需要识别 |
-|---|---|---|---|
-| text-layer | 38 | 22.5% | 否 |
-| image | 46 | 27.2% | 否，形状有限且逐点相同，只需一次标注 |
-| no-staff | 85 | 50.3% | 是 |
+| 脚本 | 写入 |
+|---|---|
+| `init_tabulate.py` | 头信息：歌名、歌手、专辑、tabber、速度、调性、capo、调弦 |
+| `apply_style.py` | 样式三件 `BinaryStylesheet`、`LayoutConfiguration`、`PartConfiguration`，取自 `resource/style/<gp7\|gp8>/`，格式按目标文件 `<GPVersion>` 自动判。`--from` 改为从任意 `.gp` 抄这三项，`--format` 强制指定 |
+| `inject_chord_diagram.py` | 从谱面按小节推和弦，写 `DiagramCollection`，换和弦处打 `<Chord>` 标记，`--chart` 同时填页面顶部的和弦表 |
+| `vocal_syllables.py` | 人声轨音节起点转成 `小节.拍位`，歌词落位依据，仅源头 A |
+| `inject_lyrics.py` | 歌词行，每个 CJK 字一个 token，空格占一拍 |
 
 </div>
 
-`text-layer` 这条的解码链：内容流解释器跟踪 CTM 与文本矩阵得到定位字形，ToUnicode CMap 还原字符，路径算子给出谱表线与小节线，品位数字的基线固定落在所属弦线下方一个常量，标定后弦位归属是一次最近邻匹配。
+模板：仓库不附带 `.gp`。`--template` 接你自己的任意 `.gp`。`apply_style.py` 不需要，`resource/style/` 自带的样式集覆盖 gp7 与 gp8。
 
-节奏有两套编码，取决于导出设置：五线谱在场时看符干与符杠层数，TAB-only 时看谱表下方的符尾字形与符杠。
+## 依赖
+
+<div align="center">
+
+| 源头 | 安装 |
+|---|---|
+| B 图像·PDF | Python 3.10 以上，只用标准库 |
+| A 音频，抓取与分析 | `pip install --user numpy scipy yt-dlp imageio-ffmpeg` |
+| A 音频，分轨 | `pip install --user torch torchaudio --index-url https://download.pytorch.org/whl/cpu` 然后 `pip install --user demucs` |
+| A 音频，转录 | `pip install --user onnxruntime` 然后 `pip install --user --no-deps basic-pitch` 然后 `pip install --user pretty_midi mir_eval librosa resampy` |
+
+</div>
+
+约束：Python 3.13 下 basic-pitch 必须 `--no-deps` 装，依赖另行补齐，直接装会依赖冲突。torch 与 demucs 分两条 pip 命令。
 
 ## 准确率
 
@@ -118,54 +160,70 @@ python tools/bench/bench.py --library <path> --detail "song name"
 ## 源码布局
 
 ```
+gp-workbench.py                        CLI 入口：route / read / rhythm / gp / convert / verify
 src/
-├── pdf/        PDF content stream: positioned glyphs and vector segments
-├── score/      staff geometry, TAB notes, rhythm from beams and flags
-├── gp/         .gp read, write and verify
-├── classify.py which route a PDF needs
-└── cli.py      command line entry
+├── cli.py
+├── converter/
+│   ├── converter.py                   PDF 解码结果 -> .gp
+│   └── pdf/
+│       ├── router.py                  判定 PDF 走哪条解码路径
+│       ├── extractor.py               文本层 PDF 取定位字形
+│       ├── staff.py                   谱表几何与 TAB 内容
+│       ├── outline.py                 TAB 谱表内矢量描边聚成字形
+│       ├── rhythm_notation.py         从五线谱符干符杠推时值
+│       └── rhythm_tab.py              无五线谱时从 TAB 推时值
+├── gp_ops/
+│   ├── reader.py                      读 .gp 成逐小节结构
+│   ├── writer.py                      模板法写 .gp，只重建 score.gpif 的 id 表
+│   └── patcher.py                     原地改 .gp，gpif 当文本改，其余 zip 条目原样复制
+├── validator/
+│   ├── verifier.py                    悬空引用、小节时值
+│   ├── benchmarker.py                 有 .gp 与导出 PDF 的曲目做回归基准
+│   └── test/                          测试用例
+├── tabulator/
+│   ├── init_tabulate.py               头信息
+│   ├── apply_style.py                 样式三件，取自 resource/style/ 或参考 .gp
+│   ├── inject_chord_diagram.py        和弦图与 <Chord> 标记
+│   └── inject_lyrics.py               歌词 token
+└── tools/
+    ├── chord-finder/
+    │   ├── fetch_audio.py             yt-dlp -> 单声道 wav
+    │   ├── stem_split.py              demucs htdemucs_6s，取 guitar
+    │   ├── transcribe_stem.py         basic-pitch -> 网格 -> 品位 -> 草稿 .gp
+    │   └── vocal_syllables.py         音节起点 -> 小节.拍位
+    └── survey/
+        └── surveyor.py                扫一个 PDF 曲库，按解码路径分类
 
-tools/
-├── survey/       全库分类普查
-├── bench/        配对回归基准
-├── fetch_audio/  抓音轨（音频链路）
-└── ab_render/    A/B 片段渲染（音频链路）
-
+resource/
+└── style/
+    ├── gp7/                           BinaryStylesheet、LayoutConfiguration、PartConfiguration，Guitar Pro 7 存档
+    └── gp8/                           同样三件，Guitar Pro 8 加载 .gps 后存档
 doc/
-├── plan.html   the working plan, open in a browser
-└── *.md        research records
+├── plan.html                          计划文档，用浏览器打开
+└── *.md                               研究记录
+Generate/Attempt-02/记录.md            音频路径记录
 ```
 
-模块之间用相对 import，`score-pdf-to-gp.py` 把仓库根加进 `sys.path` 后调用 `src.cli`。刻意不提供 console script，因为 `src/pdf` 与 `src/score` 这类顶层名字装进 site-packages 会撞车。
+命名空间包，无 `__init__.py`。所有脚本从仓库根以 `python <路径>` 运行；`gp-workbench.py` 把仓库根加进 `sys.path` 后调用 `src.cli`。
 
-`tools/bench/bench.py` 是最重要的一个。解码器每改一次都要跑，因为单文件调参会过拟合：曾出现单文件 33% 而全库 19% 的情况。
+`src/validator/benchmarker.py` 在解码器每改一次后都要跑，因为单文件调参会过拟合：曾出现单文件 33% 而全库 19% 的情况。
 
 ## 开发
 
-要求 Python 3.10 以上，无第三方依赖，不需要安装。
-
 ```bash
 git clone <repo>
-cd score-pdf-to-gp
-python tools/bench/bench.py --library <your score library>
+cd gp-workbench
+python src/validator/benchmarker.py --library <your score library>
 ```
 
-`work/` 是 gitignored 的输出目录，分类表与基准报告写在那里。
+输出目录，均已 gitignored：
 
-计划文档见 `doc/plan.html`，用浏览器打开。研究记录是 `doc/` 下的 markdown 文件。
+- `work/`：分类表、基准报告
+- `build/`：音频、分轨、草稿 `.gp`
 
-## 路线图
+采集新样式集：在 Guitar Pro 8 里加载 `.gps`，存档，再从该 `.gp` 抽 `BinaryStylesheet`、`LayoutConfiguration`、`PartConfiguration` 三个条目到 `resource/style/gp8/`。Guitar Pro 8 只采信它自己编译出的样式表：GP7 时代的 `BinaryStylesheet` 塞进 GP8 文件能打开但谱内不画和弦图，`.gps` 是文本 `key=value`，不能直接塞。
 
-<div align="center">
-
-| 版本 | 内容 |
-|---|---|
-| v0.1 | 文本层路线，音符与时值解码，回归基准 **（当前）** |
-| v0.2 | 修小节切分与连杠组短钩，精度目标 70% |
-| v0.3 | 矢量轮廓路线，覆盖率目标 50% |
-| 待定 | 纯位图路线 |
-
-</div>
+计划文档：`doc/plan.html`。研究记录：`doc/*.md`，音频路径记录在 `Generate/Attempt-02/记录.md`。
 
 ## 许可
 
