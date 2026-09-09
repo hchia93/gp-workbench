@@ -55,7 +55,7 @@ def to_song(measures, signature, title, artist, tempo=90, capo=0):
             # gp_ops.writer has no rest yet, so an empty measure is written as silence
             beats.append(Beat("Whole", [Note(6, 0, muted=True)]))
         bars.append({"beats": beats})
-    return {"title": title, "artist": artist, "tabber": "gp-workbench",
+    return {"title": title, "artist": artist, "tabber": "",
             "tempo": tempo, "time": signature, "capo": capo, "bars": bars}
 
 

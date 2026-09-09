@@ -152,6 +152,22 @@ def item_xml(cid, name, root, bass, tones, pcs, voicing):
             f'<BassNote step="{bs}" accidental="{ba}"/>\n{deg}\n</Chord>\n</Item>')
 
 
+def existing_items(xml):
+    """Diagrams already in the track's collection, name -> (id, item xml).
+
+    Kept as they are on a rerun: hand made diagrams live here too, and the chord
+    reader only names what it can infer from the fretted notes.
+    """
+    m = re.search(r'<Property name="DiagramCollection">\s*<Items>(.*?)</Items>', xml, re.S)
+    if not m:
+        return {}
+    out = {}
+    for item in re.findall(r'<Item id="\d+" name="[^"]*">.*?</Item>', m.group(1), re.S):
+        cid = int(re.search(r'id="(\d+)"', item).group(1))
+        out[re.search(r'name="([^"]*)"', item).group(1)] = (cid, item)
+    return out
+
+
 def clone_beat(xml, bid):
     new_id = max(int(i) for i in re.findall(r'<Beat id="(\d+)">', xml)) + 1
     m = re.search(r'<Beat id="%s">.*?</Beat>' % bid, xml, re.S)
@@ -195,14 +211,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src")
     ap.add_argument("out")
-    ap.add_argument("--chart", action="store_true", help="also fill the chord palette drawn at the top of the page")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     xml = load_gpif(args.src)
     bars = read_score(xml)
 
-    marks, items, ids = [], [], {}
+    kept = existing_items(xml)
+    marks, fresh = [], []
+    ids = {n: cid for n, (cid, _) in kept.items()}
+    next_id = max(ids.values(), default=-1) + 1
     prev = None
     for b, i, voicing in segments(bars):
         named = name_chord(voicing)
@@ -210,23 +228,26 @@ def main():
             continue
         name = named[0]
         if name not in ids:
-            ids[name] = len(items)
-            items.append((name,) + named[1:] + (voicing,))
+            ids[name] = next_id
+            next_id += 1
+            fresh.append((name, item_xml(next_id - 1, name, *named[1:], voicing)))
         if name != prev:
             marks.append((b, i, name))
         prev = name
 
     for b, i, name in marks:
         print(f"  bar {b + 1:>2} beat {i + 1}  {name}")
-    print(f"{len(marks)} chord marks, {len(items)} diagrams: {', '.join(n for n, *_ in items)}")
+    names = list(kept) + [n for n, _ in fresh]
+    print(f"{len(marks)} chord marks, {len(names)} diagrams: {', '.join(names)}"
+          + (f" (kept {len(kept)})" if kept else ""))
     if args.dry_run:
         return
 
-    # The working set is the palette Guitar Pro spreads across the top of the
-    # page. Leave it empty unless asked, the marks in the score carry the chord.
-    coll = "<Items>\n" + "\n".join(item_xml(ids[n], n, *rest) for n, *rest in items) + "\n</Items>"
-    work = ("<Items>\n" + "\n".join(item_xml(None, n, *rest) for n, *rest in items) + "\n</Items>"
-            if args.chart else "<Items/>")
+    # Collection holds the definitions the marks point at by id, the working set
+    # is what the Chords panel lists as the track's diagram library.
+    every = [body for _, body in kept.values()] + [body for _, body in fresh]
+    coll = "<Items>\n" + "\n".join(every) + "\n</Items>"
+    work = "<Items>\n" + "\n".join(re.sub(r'<Item id="\d+" ', "<Item ", b, count=1) for b in every) + "\n</Items>"
     xml = re.sub(r'(<Property name="DiagramCollection">\s*)<Items(?:/>|>.*?</Items>)',
                  lambda m: m.group(1) + coll, xml, count=1, flags=re.S)
     xml = re.sub(r'(<Property name="DiagramWorkingSet">\s*)<Items(?:/>|>.*?</Items>)',

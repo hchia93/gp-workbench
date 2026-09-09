@@ -1,6 +1,6 @@
 """Split a track into stems and keep the guitar one.
 
-    python src/tools/chord-finder/split_stem.py --in build/audio/raw.webm --seconds 40
+    python src/tools/chord-finder/split_stem.py --in build/audio/raw.webm --start 58 --seconds 66
 
 Needs demucs on a CPU-only torch, both installable without admin rights:
     pip install --user torch torchaudio --index-url https://download.pytorch.org/whl/cpu
@@ -32,21 +32,24 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in", dest="src", default="build/audio/raw.webm")
     ap.add_argument("--out", default="build/stems")
+    ap.add_argument("--start", type=float, default=0.0)
     ap.add_argument("--seconds", type=float, default=0.0, help="0 for the whole track")
+    ap.add_argument("--name", default="input")
     ap.add_argument("--stem", default="guitar")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
-    slice_wav = os.path.join(args.out, "input.wav")
+    slice_wav = os.path.join(args.out, args.name + ".wav")
 
+    seek = ["-ss", str(args.start)] if args.start > 0 else []
     cut = ["-t", str(args.seconds)] if args.seconds > 0 else []
-    subprocess.run([ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-i", args.src,
+    subprocess.run([ffmpeg_exe(), "-hide_banner", "-loglevel", "error", *seek, "-i", args.src,
                     *cut, "-ac", "2", "-ar", "44100", "-y", slice_wav], check=True)
 
     subprocess.run([sys.executable, "-m", "demucs", "-n", MODEL, "-d", "cpu",
                     "--jobs", "1", "-o", args.out, slice_wav], check=True)
 
-    stem = os.path.join(args.out, MODEL, "input", args.stem + ".wav")
+    stem = os.path.join(args.out, MODEL, args.name, args.stem + ".wav")
     if not os.path.exists(stem):
         sys.exit(f"no {args.stem} stem at {stem}")
     print(f"wrote {stem}")

@@ -155,6 +155,7 @@ def main():
     ap.add_argument("--start", type=float, default=0.0)
     ap.add_argument("--end", type=float, default=0.0)
     ap.add_argument("--max-fret", type=int, default=5)
+    ap.add_argument("--ref", type=int, help="downbeat sixteenth of the grid, when the bass weight leaves it ambiguous")
     ap.add_argument("--title", default="")
     ap.add_argument("--artist", default="")
     args = ap.parse_args()
@@ -181,7 +182,7 @@ def main():
     weight = np.zeros(16)
     for k, v in slots.items():
         weight[k % 16] += sum(1 for p in v if p <= 55)
-    ref = int(max(range(16), key=lambda s: weight[s % 16] + weight[(8 + s) % 16]))
+    ref = args.ref % 16 if args.ref is not None else int(max(range(16), key=lambda s: weight[s % 16] + weight[(8 + s) % 16]))
     slots = fold_to_eighths(slots, ref)
     lo_slots = fold_to_eighths(to_slots(loose, phase, six, attack), ref)
 
@@ -260,7 +261,7 @@ def main():
             pos += sp
         song_bars.append({"beats": beats})
 
-    song = {"title": args.title, "artist": args.artist, "tabber": "transcribe_stem draft",
+    song = {"title": args.title, "artist": args.artist, "tabber": "",
             "tempo": int(round(bpm)), "capo": 0, "time": "4/4", "bars": song_bars, "lyrics": None}
     n, bt, nb = writer.build(args.template, song, args.out)
     print(f"{nb} bars, {bt} beats, {n} notes, downbeat phase {ref} sixteenths -> {args.out}")
