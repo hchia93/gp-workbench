@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
 """Append bars to a Guitar Pro 7/8 score without rebuilding what is already there.
 
-    python src/tabulator/append_bars.py in.gp out.gp section.json
+    python src/tabulator/append_bars.py in.gp out.gp section.json [--from BAR]
+
+--from BAR (1-based) rewrites bars from that one on instead of appending: the
+bars keep their ids and their voices point at fresh beats. Bars after the
+section stay as they are.
 
 section.json is {"bars": [[beat, ...], ...]}, a beat being
 {"v": "Eighth", "dot": false, "n": [[string, fret], ...]} with string 1 = high E
@@ -47,11 +51,27 @@ def append_table(xml, plural, entries):
     return xml[:cut] + "\n".join(entries) + "\n" + xml[cut:]
 
 
+def sweep(xml):
+    """Drop beats and notes no voice points at any more after a rewrite."""
+    live_beats = set()
+    for body in re.findall(r"<Voice id=\"\d+\">(.*?)</Voice>", xml, re.S):
+        live_beats.update(re.search(r"<Beats>(.*?)</Beats>", body).group(1).split())
+    live_notes = set()
+    for bid, body in re.findall(r'<Beat id="(\d+)">(.*?)</Beat>', xml, re.S):
+        if bid in live_beats:
+            ns = re.search(r"<Notes>(.*?)</Notes>", body)
+            live_notes.update(ns.group(1).split() if ns else [])
+    xml = re.sub(r'<Beat id="(\d+)">.*?</Beat>\n?', lambda m: "" if m.group(1) not in live_beats else m.group(0), xml, flags=re.S)
+    xml = re.sub(r'<Note id="(\d+)">.*?</Note>\n?', lambda m: "" if m.group(1) not in live_notes else m.group(0), xml, flags=re.S)
+    return xml
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src")
     ap.add_argument("out")
     ap.add_argument("section")
+    ap.add_argument("--from", dest="start", type=int, default=0, help="1-based bar to rewrite from")
     args = ap.parse_args()
 
     with open(args.section, encoding="utf-8") as f:
@@ -63,8 +83,17 @@ def main():
     time = re.search(r"<MasterBar>.*?<Time>([\d/]+)</Time>", xml, re.S).group(1)
 
     nid, bid, vid, barid = (last_id(xml, t) for t in ("Note", "Beat", "Voice", "Bar"))
+    masters = re.findall(r"<MasterBar>.*?</MasterBar>", xml, re.S)
+    reuse = []
+    if args.start:
+        if args.start > len(masters):
+            sys.exit(f"--from {args.start}: score has {len(masters)} bars")
+        for mb in masters[args.start - 1:]:
+            bar_id = re.search(r"<Bars>(\d+)", mb).group(1)
+            voice_id = re.search(r'<Bar id="%s">.*?<Voices>(\d+)' % bar_id, xml, re.S).group(1)
+            reuse.append(int(voice_id))
     notes, beats, voices, bar_entries, masterbars = [], [], [], [], []
-    for bar in bars:
+    for index, bar in enumerate(bars):
         beat_ids = []
         for beat in bar:
             xml, ref = rhythm_ref(xml, beat.get("v", "Eighth"), bool(beat.get("dot")))
@@ -77,9 +106,14 @@ def main():
             beat_ids.append(bid)
             body = writer._beat_xml(bid, writer.Beat(beat.get("v", "Eighth"), [], bool(beat.get("dot"))), note_ids)
             beats.append(re.sub(r'<Rhythm ref="\d+" />', f'<Rhythm ref="{ref}" />', body))
+        ids = " ".join(str(i) for i in beat_ids)
+        if index < len(reuse):
+            xml = re.sub(r'(<Voice id="%d">\s*<Beats>)[^<]*(</Beats>)' % reuse[index],
+                         lambda m: m.group(1) + ids + m.group(2), xml, count=1)
+            continue
         vid += 1
         barid += 1
-        voices.append(f'<Voice id="{vid}">\n<Beats>{" ".join(str(i) for i in beat_ids)}</Beats>\n</Voice>')
+        voices.append(f'<Voice id="{vid}">\n<Beats>{ids}</Beats>\n</Voice>')
         bar_entries.append(f'<Bar id="{barid}">\n<Clef>G2</Clef>\n<Voices>{vid} -1 -1 -1</Voices>\n</Bar>')
         masterbars.append(f"<MasterBar>\n{key}\n<Time>{time}</Time>\n<Bars>{barid}</Bars>\n</MasterBar>")
 
@@ -88,9 +122,11 @@ def main():
     xml = append_table(xml, "Voices", voices)
     xml = append_table(xml, "Bars", bar_entries)
     xml = append_table(xml, "MasterBars", masterbars)
+    if reuse:
+        xml = sweep(xml)
 
     save_gpif(args.src, args.out, xml)
-    print(f"+{len(bars)} bars, {len(beats)} beats, {len(notes)} notes -> {args.out}")
+    print(f"{len(reuse)} bars rewritten, {len(bar_entries)} appended, {len(beats)} beats, {len(notes)} notes -> {args.out}")
 
 
 if __name__ == "__main__":

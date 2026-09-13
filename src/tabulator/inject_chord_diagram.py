@@ -2,12 +2,19 @@
 """Read chords off a Guitar Pro 8 score and inject diagrams and chord marks.
 
     python src/tabulator/inject_chord_diagram.py in.gp out.gp
-        [--dry-run]
+        [--key D] [--dry-run]
+
+Names are chosen the way the program's chord tool lists them: every spelling
+that fits the fretted notes is a candidate, and the pick prefers a chord tone
+in the bass over an odd root, a root inside the key, and a root that the next
+chord confirms. --dry-run prints the aliases it passed over. The key defaults
+to the score's key signature.
 
 Chords are inferred per bar from what is actually fretted, so one bar may carry
 one chord or four, and a chord that runs on into the next bar is not marked
-twice. The file is patched in place as text; nothing drawn in Guitar Pro is
-regenerated.
+twice. A strike whose bass is another tone of the chord before it, with the
+fingers held or moved by a step, is that chord walking and gets no mark. The
+file is patched in place as text; nothing drawn in Guitar Pro is regenerated.
 """
 
 import argparse
@@ -34,8 +41,15 @@ QUALITIES = [
     ("",     (0, 4, 7)), ("m",    (0, 3, 7)), ("7",   (0, 4, 7, 10)), ("7M",   (0, 4, 7, 11)),
     ("m7",   (0, 3, 7, 10)), ("sus4", (0, 5, 7)), ("sus2", (0, 2, 7)), ("m7b5", (0, 3, 6, 10)),
     ("dim",  (0, 3, 6)), ("add9", (0, 2, 4, 7)), ("6",  (0, 4, 7, 9)), ("m6",   (0, 3, 7, 9)),
-    ("9",    (0, 2, 4, 7, 10)),
+    ("9",    (0, 2, 4, 7, 10)), ("m9", (0, 2, 3, 7, 10)),
+    ("7sus4", (0, 5, 7, 10)), ("7sus2", (0, 2, 7, 10)),
 ]
+RARE = {"m7b5", "dim", "add9", "6", "m6", "9", "7sus4", "7sus2"}
+# a seventh chord with no third is the last resort: it counts as missing one note
+SUS = {"7sus4", "7sus2"}
+MAJOR = (0, 2, 4, 5, 7, 9, 11)
+# how welcome each scale degree is as a chord root, I IV V first, vii last
+DEGREE_RANK = {0: 0, 3: 0, 4: 0, 1: 1, 5: 1, 2: 2, 6: 3}
 DEGREE = {2: ("Second", "Major"), 3: ("Third", "Minor"), 4: ("Third", "Major"),
           5: ("Fourth", "Perfect"), 6: ("Fifth", "Diminished"), 7: ("Fifth", "Perfect"),
           9: ("Sixth", "Major"), 10: ("Seventh", "Minor"), 11: ("Seventh", "Major")}
@@ -85,15 +99,46 @@ def segments(bars):
     after it, and the first lone bass after it. Later lone notes are the inner
     bass walking or a passing tone and would only add wrong extensions.
     """
+    last = set()
     for b, (seq, _) in enumerate(bars):
         starts = [i for i, (_, ns) in enumerate(seq) if is_start(ns, i == 0 or not any(len(x[1]) > 1 for x in seq[:i]))]
+        # fingers still on the previous chord with no thumb under them are that
+        # chord going on, not a new one
+        kept = [i for i in starts if any(s in BASS_STRINGS for s, _, _ in seq[i][1])
+                or not {m % 12 for _, _, m in seq[i][1]} <= last]
+        # what those fingers were sounding is still ringing when the thumb lands,
+        # provided the thumb lands under the same fingers
+        carry = {}
+        if kept and kept[0] > (starts[0] if starts else 0):
+            for _, ns in seq[starts[0]:kept[0]]:
+                if len(ns) > 1:
+                    for s, f, m in ns:
+                        carry.setdefault(s, (f, m))
+            fingers = {m % 12 for s, _, m in seq[kept[0]][1] if s not in BASS_STRINGS}
+            if not fingers <= {m % 12 for _, (_, m) in carry.items()}:
+                carry = {}
+        starts = kept
+        # fingers that open the bar before the thumb arrives are the same chord
+        # as the thumb's strike, as long as no lone bass note sits in between
+        has_bass = lambda ns: any(s in BASS_STRINGS for s, _, _ in ns)
+        merged = []
+        for n, i in enumerate(starts):
+            prev = merged[-1] if merged else None
+            if prev is not None and not has_bass(seq[prev][1]) and has_bass(seq[i][1]) \
+                    and not any(len(ns) == 1 and has_bass(ns) for _, ns in seq[prev + 1:i]):
+                continue
+            merged.append(i)
+        starts = merged
         for n, i in enumerate(starts):
             end = starts[n + 1] if n + 1 < len(starts) else len(seq)
-            voicing = {}
+            voicing = dict(carry) if n == 0 else {}
             # a start without a bass gets its root from the first lone bass after
             # it; a start that has one already treats later lone basses as the
             # inner bass walking, which is what turns a G into a G7M
             need_bass = not any(s in BASS_STRINGS for s, _, _ in seq[i][1])
+            # a thumb that struck on 5 or 6 and then alternates on 4 is playing
+            # the same chord; a lone note anywhere else is a walk or a passing tone
+            deep = any(s in (5, 6) for s, _, _ in seq[i][1])
             for j in range(i, end):
                 ns = seq[j][1]
                 if j == i or len(ns) > 1:
@@ -103,30 +148,91 @@ def segments(bars):
                     s, f, m = ns[0]
                     voicing.setdefault(s, (f, m))
                     need_bass = False
+                elif deep and len(ns) == 1 and ns[0][0] == 4:
+                    s, f, m = ns[0]
+                    voicing.setdefault(s, (f, m))
+            last = {m % 12 for _, (_, m) in voicing.items()}
             yield b, i, voicing
 
 
-def name_chord(voicing):
+def walks_on(voicing, prev_voicing, prev_named):
+    """True when this strike is the previous chord going on, not a new one.
+
+    The thumb has moved to another tone of the chord it was already under and
+    the fingers have stayed or stepped to a neighbour, so the bass note it left
+    is still ringing under the new one. Bm7 with the thumb on D is still Bm7.
+    """
+    if not prev_named:
+        return False
+    _, root, _, tones, _ = prev_named[:5]
+    chord = {(root + t) % 12 for t in tones}
+    bass = min(m for _, (_, m) in voicing.items())
+    if bass % 12 == root or bass % 12 not in chord:
+        return False
+    held = {m % 12 for _, (_, m) in prev_voicing.items()}
+    for _, (_, m) in voicing.items():
+        if m == bass:
+            continue
+        pc = m % 12
+        if pc not in chord and not any(min((pc - h) % 12, (h - pc) % 12) <= 2 for h in held):
+            return False
+    return True
+
+
+def key_of(xml, override=None):
+    """Tonic pitch class of the key, from --key or the first bar's signature."""
+    if override:
+        m = re.match(r"([A-G])([#b]?)(m?)$", override)
+        if not m:
+            sys.exit(f"unknown key {override}")
+        pc = NAMES.index(m.group(1)) + {"#": 1, "b": -1, "": 0}[m.group(2)]
+        return (pc + (3 if m.group(3) else 0)) % 12
+    acc = int(re.search(r"<AccidentalCount>(-?\d+)</AccidentalCount>", xml).group(1))
+    minor = re.search(r"<Mode>Minor</Mode>", xml) is not None
+    return ((acc * 7) % 12 + (3 if minor else 0)) % 12
+
+
+def candidates(voicing, tonic, next_root=None):
+    """Every spelling that fits, best first.
+
+    The order is the program's habit: complete chords before incomplete ones,
+    then a bass that is a chord tone (a slash chord) before a bass that forces
+    an odd root, then a root that the next chord repeats (the bass got there
+    early), then plain qualities before rare ones, then roots high in the key.
+    """
     pcs = {m % 12 for _, (_, m) in voicing.items()}
     bass = min(m for _, (_, m) in voicing.items()) % 12
-    best = None
-    for root in [bass] + [p for p in pcs if p != bass]:
+    scale = {(tonic + d) % 12: i for i, d in enumerate(MAJOR)}
+    out = []
+    for root in range(12):
         rel = {(p - root) % 12 for p in pcs}
         for rank, (suffix, tones) in enumerate(QUALITIES):
             tset = set(tones)
             if rel - tset:
                 continue
-            missing = len(tset - rel)
-            key = (missing, root != bass, rank)
-            if best is None or key < best[0]:
-                best = (key, root, suffix, tones)
-    if best is None:
-        return None
-    _, root, suffix, tones = best
-    name = NAMES[root] + suffix
-    if root != bass:
-        name += "/" + NAMES[bass]
-    return name, root, bass, tones, pcs
+            bass_rel = (bass - root) % 12
+            if root != bass and bass_rel not in tset:
+                continue
+            missing = tset - rel
+            root_missing = 0 in missing
+            if root_missing and root != next_root:
+                continue
+            # a bass that has already moved to the next chord's tone is that
+            # chord in inversion, not a new root
+            early = root != bass and root == next_root
+            name = NAMES[root] + suffix + ("/" + NAMES[bass] if root != bass else "")
+            # a spelling that implies notes outside the key loses to one that stays in it
+            foreign = sum(1 for i in tset if (root + i) % 12 not in scale)
+            score = (len(missing - {0}) + (suffix in SUS), root != bass and not early, root_missing and not early,
+                     foreign, suffix in RARE, DEGREE_RANK.get(scale.get(root, -1), 4), rank)
+            out.append((score, name, root, bass, tones, pcs))
+    out.sort(key=lambda c: c[0])
+    return [c[1:] for c in out]
+
+
+def name_chord(voicing, tonic=0, next_root=None):
+    got = candidates(voicing, tonic, next_root)
+    return got[0] if got else None
 
 
 # ---- xml emit ------------------------------------------------------------------
@@ -211,22 +317,37 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src")
     ap.add_argument("out")
+    ap.add_argument("--key", help="D, Bm, F#, Ebm ... (default: the score's key signature)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     xml = load_gpif(args.src)
     bars = read_score(xml)
+    tonic = key_of(xml, args.key)
 
     kept = existing_items(xml)
     marks, fresh = [], []
     ids = {n: cid for n, (cid, _) in kept.items()}
     next_id = max(ids.values(), default=-1) + 1
+    segs = list(segments(bars))
+    # a first pass names every chord on its own, the second lets each one see
+    # the root of the chord after it
+    first = [name_chord(v, tonic) or (None, None) for _, _, v in segs]
     prev = None
-    for b, i, voicing in segments(bars):
-        named = name_chord(voicing)
-        if not named:
+    prev_named, prev_voicing = None, {}
+    aliases = {}
+    for n, (b, i, voicing) in enumerate(segs):
+        if walks_on(voicing, prev_voicing, prev_named):
             continue
+        # the chord after this one, skipping restrikes of the same shape
+        following = next((f[1] for f in first[n + 1:] if f[0] is not None and f[0] != first[n][0]), None)
+        found = candidates(voicing, tonic, following)
+        if not found:
+            continue
+        named = found[0]
         name = named[0]
+        prev_named, prev_voicing = named, voicing
+        aliases[(b, i)] = [c[0] for c in found[1:5]]
         if name not in ids:
             ids[name] = next_id
             next_id += 1
@@ -236,7 +357,8 @@ def main():
         prev = name
 
     for b, i, name in marks:
-        print(f"  bar {b + 1:>2} beat {i + 1}  {name}")
+        others = aliases.get((b, i), [])
+        print(f"  bar {b + 1:>2} beat {i + 1}  {name:<8}" + (f"  also {', '.join(others)}" if others and args.dry_run else ""))
     names = list(kept) + [n for n, _ in fresh]
     print(f"{len(marks)} chord marks, {len(names)} diagrams: {', '.join(names)}"
           + (f" (kept {len(kept)})" if kept else ""))

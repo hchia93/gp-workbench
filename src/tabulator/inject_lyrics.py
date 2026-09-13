@@ -11,12 +11,18 @@ walks the beats and skips every rest, so a syllable can never land on a rest and
 a line that should start before the first chord has nowhere to go. This writes
 the tokens straight onto the beats instead, as beat level <Lyrics><Line>, which
 is the form Guitar Pro itself saves after a manual nudge. One token per beat of
-voice 0, rests included, and the track level block is blanked so the dispatch
-cannot overwrite the placement.
+voice 0, rests included. The track level block is written too, spelled the way
+dispatch would need it, so an edit that moves bars rebuilds the same words
+instead of clearing every beat.
 
 Tokens: every CJK character is its own token, an ASCII word stays whole, PLUS
 glues characters onto one beat, DOT leaves a beat blank, and a space only
 separates. So "無+心 的+愛" puts "無心" on the rest and "的愛" on the chord after it.
+Contract on line breaks: the text is laid out one lyric phrase per line, the
+phrases being the song's own short lines, not the bars. A newline separates
+tokens exactly like one space and is carried into the Lyrics panel as a line
+break, so the panel reads phrase by phrase. The tool never breaks or joins
+lines on its own.
 """
 
 import argparse
@@ -44,7 +50,7 @@ def tokens(text):
     for ch in text:
         if ch == "+":
             glue = bool(out)
-        elif ch == " ":
+        elif ch in " \n":
             glue = False
             joinable = False
         elif ch == ".":
@@ -63,6 +69,15 @@ def tokens(text):
             out.append(ch)
             joinable = True
     return out
+
+
+def parse(text):
+    """Tokens plus the token counts at which the text broke a line."""
+    toks, breaks = [], []
+    for piece in text.split("\n"):
+        toks += tokens(piece)
+        breaks.append(len(toks))
+    return toks, breaks[:-1]
 
 
 def slots(xml, track):
@@ -145,8 +160,45 @@ def unshare(xml, table, wanted):
     return xml, ids
 
 
-def blank_track_lyrics(xml, track):
-    block = '<Lyrics dispatched="true">\n' + "\n".join([BLANK_LINE] * LINES) + "\n</Lyrics>"
+def track_text(placed, breaks=()):
+    """The same line as Guitar Pro's own dispatch would need to spell it.
+
+    Dispatch walks note beats only, so a token sitting on a rest has no slot of
+    its own and rides along on the next note beat. Line breaks land after the
+    same words they followed in the source.
+    """
+    out, pending, cut = [], "", set()
+    for i, (tok, rest) in enumerate(placed):
+        if i in breaks:
+            cut.add(len(out))
+        if rest:
+            pending += tok
+            continue
+        out.append(pending + tok)
+        pending = ""
+    if pending:
+        out.append(pending)
+    while out and not out[-1]:
+        out.pop()
+    text = ""
+    for i, tok in enumerate(out):
+        if i:
+            text += "\n" if i in cut else " "
+        text += tok
+    return text
+
+
+def track_lyrics(xml, track, rows):
+    """Fill the track block too, so an edit that re-dispatches finds the words.
+
+    Beat level <Lyrics> is only the cached dispatch. Guitar Pro rebuilds it from
+    this block whenever bars move, so leaving it empty drops every syllable in
+    the score at once.
+    """
+    entries = [f"<Line>\n<Text><![CDATA[{text}]]></Text>\n<Offset>{bar}</Offset>\n</Line>"
+               for bar, text in rows[:LINES]]
+    entries += [BLANK_LINE] * (LINES - len(entries))
+    block = '<Lyrics dispatched="true">\n' + "\n".join(entries) + "\n</Lyrics>"
     spans = list(re.finditer(r'<Track id="\d+">(.*?)</Track>', xml, re.S))
     if track >= len(spans):
         sys.exit(f"no track {track} in score")
@@ -183,7 +235,8 @@ def main():
 
     with open(args.lyrics, encoding="utf-8") as f:
         raw = json.load(f)
-    lines = [(int(bar), text.split(" ") if args.raw else tokens(text)) for bar, text in raw]
+    parsed = [(int(bar), *((text.split(" "), []) if args.raw else parse(text))) for bar, text in raw]
+    lines = [(bar, toks) for bar, toks, _ in parsed]
 
     xml = load_gpif(args.src)
     table = slots(xml, args.track)
@@ -199,7 +252,7 @@ def main():
     if args.dry:
         return
     xml, ids = unshare(xml, table, per_slot)
-    xml = blank_track_lyrics(xml, args.track)
+    xml = track_lyrics(xml, args.track, [(bar, track_text(p, set(br))) for (bar, _, br), p in zip(parsed, report)])
     xml = inject(xml, {ids[i]: v for i, v in per_slot.items()})
     save_gpif(args.src, args.out, xml)
     print(f"{len(lines)} lines on {len(per_slot)} beats -> {args.out}")
