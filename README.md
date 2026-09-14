@@ -94,26 +94,48 @@ python src/validator/benchmarker.py --library <path> --detail "song name"
 Either draft then goes through `src/tabulator/`. Open the draft in Guitar Pro, fix it by hand, save, then run the scripts below in order. Every script takes `in.gp out.gp`.
 
 ```bash
-python src/tabulator/init_tabulate.py in.gp out.gp --title ... --artist ... --tempo 72 --key D
-python src/tabulator/apply_style.py in.gp out.gp [--from reference.gp] [--format gp7|gp8]
-python src/tabulator/inject_chord_diagram.py in.gp out.gp [--chart]
+python src/tabulator/bars.py          add|modify|replace in.gp out.gp section.json [--from N]
+python src/tabulator/header.py        setup in.gp out.gp --title ... --artist ... --tempo 72 --key D
+python src/tabulator/style.py         apply in.gp out.gp [--from reference.gp] [--format gp7|gp8]
+python src/tabulator/chord_pattern.py apply in.gp out.gp --from N --chords "xx0222:2 x20222:2" [--figure "e:F0+F1+T0 e:F2"]
+python src/tabulator/chord_diagram.py deduce in.gp out.gp [--key D]
+python src/tabulator/chord_diagram.py mark in.gp out.gp [--clear]
 python src/tools/chord-finder/analyse_vocal_onset.py vocals.wav --bpm 72.1 --phase 0.045 --grid0 22 --json build/vox.json
-python src/tabulator/inject_lyrics.py in.gp out.gp lyrics.json [--raw]
+python src/tabulator/lyrics.py        add in.gp out.gp lyrics.json [--raw]
 ```
 
 <div align="center">
 
 | Script | Writes |
 |---|---|
-| `init_tabulate.py` | Header: title, artist, album, tabber, tempo, key, capo, tuning |
-| `apply_style.py` | Style triplet `BinaryStylesheet`, `LayoutConfiguration`, `PartConfiguration` from `resource/style/<gp7\|gp8>/`, format read from the target's `<GPVersion>`. `--from` copies the three entries from any `.gp` instead, `--format` forces one |
-| `inject_chord_diagram.py` | Chords inferred per measure from the notes, `DiagramCollection` entries, `<Chord>` marks where the chord changes, `--chart` fills the chord palette at the top of the page |
+| `bars.py` | Bars. `add` appends, `modify` rewrites from `--from` on and carries the `<Lyrics>` and `<Chord>` Guitar Pro hangs on each beat across position by position, stopping when a bar is too short to hold one; `replace` is the one allowed to lose it |
+| `header.py` | `setup` writes the header: title, artist, album, tabber, tempo, key, capo, tuning. Only the fields given |
+| `style.py` | `apply` writes the style triplet `BinaryStylesheet`, `LayoutConfiguration`, `PartConfiguration` from `resource/style/<gp7\|gp8>/`, format read from the target's `<GPVersion>`. `--from` copies the three from any `.gp` instead, `--format` forces one |
+| `chord_pattern.py` | `sample` reads one bar as a slot figure, the spelling `src/sampling` uses. `apply` lays a figure over a run of chords, the figure coming from the `--sample` bar or a `--figure` string |
+| `chord_diagram.py` | `deduce` reads the frets, grows `DiagramCollection` and the chart at the top of the page, places no mark. `mark` marks every bar and only from a diagram already on file, leaving a bar it cannot account for blank. `refresh` audits and carries a change to a diagram onto the marks pointing at it |
 | `analyse_vocal_onset.py` | Syllable onsets from the vocal stem as `measure.beat`, the placement basis for lyrics, source A only |
-| `inject_lyrics.py` | Lyric line, one token per CJK character, a space skips one beat |
+| `lyrics.py` | `add` places lyrics the score does not have yet, spacing from where each line starts. `modify` moves words already placed, spacing untouched. `refresh` answers whether the words are still on the staff and respells the track block from the beats |
 
 </div>
 
-Templates: the repository ships no `.gp`. `--template` takes any `.gp` of your own. `apply_style.py` needs none, the bundled sets under `resource/style/` cover gp7 and gp8.
+Templates: the repository ships no `.gp`. `--template` takes any `.gp` of your own. `style.py` needs none, the bundled sets under `resource/style/` cover gp7 and gp8.
+
+## Figure pack
+
+`src/sampling/` scans the scores already written and packs the ways they break a chord up. An entry is one chord plus one figure; a figure records which slot is plucked when with the frets thrown away, so it lays onto any chord.
+
+```bash
+python src/sampling/scan.py "D:/scores/**/*.gp"
+```
+
+| Call | Gives |
+|---|---|
+| `sampling.call("D7M")` | every form the library uses for D7M, widest first |
+| `sampling.call("D7M@1")` | the one it uses most widely |
+| `sampling.figures(songs=3)` | figures at least three scores share, chord dropped |
+| `sampling.dialect()` | chord name and uses, in the library's own spelling |
+
+`corpus.db` is gzipped JSON rebuilt by `scan.py` and never read directly. It carries no notes and no lyric text.
 
 ## Dependencies
 
@@ -154,10 +176,15 @@ src/
 │   ├── benchmarker.py                 measure decode accuracy against ground-truth songs
 │   └── test/                          test cases
 ├── tabulator/
-│   ├── init_tabulate.py               fill in the song header
-│   ├── apply_style.py                 apply the layout style
-│   ├── inject_chord_diagram.py        write chord diagrams and chord marks
-│   └── inject_lyrics.py               write lyrics
+│   ├── bars.py                        add, modify or replace bars
+│   ├── header.py                      the song header
+│   ├── style.py                       the layout style
+│   ├── chord_pattern.py               picking figures
+│   ├── chord_diagram.py               diagrams and the marks on them
+│   └── lyrics.py                      lyrics on the beats
+├── sampling/
+│   ├── scan.py                        batch analysis over a .gp tree
+│   └── corpus.db                      packed figures, chords, conventions
 └── tools/
     ├── chord-finder/
     │   ├── analyse_vocal_onset.py     locate which beat each vocal syllable lands on

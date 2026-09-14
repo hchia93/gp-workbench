@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Write lyric lines into a Guitar Pro 8 score, one token per beat.
+"""Lyrics of a Guitar Pro 8 score, one token per beat.
 
-    python src/tabulator/inject_lyrics.py in.gp out.gp lyrics.json [--track N] [--dry]
+    python src/tabulator/lyrics.py add     in.gp out.gp lyrics.json [--raw] [--dry]
+    python src/tabulator/lyrics.py modify  in.gp out.gp --shift N [--from BAR]
+    python src/tabulator/lyrics.py refresh in.gp [out.gp] [--write]
 
-lyrics.json is a list of [bar, text]. bar is 0-based and says where the line
-starts.
+add takes lyrics the score does not have yet and decides the spacing from where
+each line starts: lyrics.json is a list of [bar, text], bar 0-based. Once the
+words are in the score the work is nudging, not rewriting, so modify moves what
+is already placed, by hand or to undo the displacement a bar edit caused, and
+leaves the spacing alone. refresh answers whether the words are still on the
+staff and respells the track block from the beats that hold them.
 
 Guitar Pro's own dispatch (track level <Lyrics>, what the Lyrics window edits)
 walks the beats and skips every rest, so a syllable can never land on a rest and
@@ -223,16 +229,50 @@ def inject(xml, per_beat):
     return re.sub(r'<Beat id="(\d+)">(.*?)</Beat>', repl, xml, flags=re.S)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("src")
-    ap.add_argument("out")
-    ap.add_argument("lyrics")
-    ap.add_argument("--track", type=int, default=0)
-    ap.add_argument("--raw", action="store_true", help="text is already one token per beat, space separated, empty token for a blank beat")
-    ap.add_argument("--dry", action="store_true", help="print the placement, write nothing")
-    args = ap.parse_args()
+def current(xml, track):
+    """The table plus {slot: {line: token}} for the beats holding words now."""
+    table = slots(xml, track)
+    bodies = _table(xml, "Beats", "Beat")
+    held = {}
+    for i, (bar, vid, pos, bid, rest) in enumerate(table):
+        block = re.search(r"<Lyrics>(.*?)</Lyrics>", bodies.get(bid, ""), re.S)
+        if not block:
+            continue
+        tokens = re.findall(r"<Line><!\[CDATA\[(.*?)\]\]></Line>", block.group(1))
+        got = {n: t for n, t in enumerate(tokens) if t}
+        if got:
+            held[i] = got
+    return table, held
 
+
+def regroup(table, per_slot):
+    """Track block rows spelled from what the beats actually hold."""
+    rows = []
+    for line in range(LINES):
+        used = sorted(i for i, m in per_slot.items() if line in m)
+        if not used:
+            rows.append((0, ""))
+            continue
+        first, last = used[0], used[-1]
+        placed = [(per_slot.get(i, {}).get(line, ""), table[i][4]) for i in range(first, last + 1)]
+        rows.append((table[first][0], track_text(placed)))
+    return rows
+
+
+def track_block(xml, track):
+    """The lines the Lyrics window shows, as [(bar, text), ...]."""
+    spans = list(re.finditer(r'<Track id="\d+">(.*?)</Track>', xml, re.S))
+    if track >= len(spans):
+        sys.exit(f"no track {track} in score")
+    found = re.search(r"<Lyrics\b.*?</Lyrics>", spans[track].group(1), re.S)
+    if not found:
+        return []
+    return [(int(off), text) for text, off in
+            re.findall(r"<Text><!\[CDATA\[(.*?)\]\]></Text>\s*<Offset>(-?\d+)</Offset>",
+                       found.group(0), re.S)]
+
+
+def cmd_add(args):
     with open(args.lyrics, encoding="utf-8") as f:
         raw = json.load(f)
     parsed = [(int(bar), *((text.split(" "), []) if args.raw else parse(text))) for bar, text in raw]
@@ -256,6 +296,79 @@ def main():
     xml = inject(xml, {ids[i]: v for i, v in per_slot.items()})
     save_gpif(args.src, args.out, xml)
     print(f"{len(lines)} lines on {len(per_slot)} beats -> {args.out}")
+
+
+def cmd_modify(args):
+    xml = load_gpif(args.src)
+    table, held = current(xml, args.track)
+    if not held:
+        sys.exit("no beat carries a lyric; use add, or refresh to see what is there")
+    first = next((i for i, s in enumerate(table) if s[0] == args.start), 0) if args.start else 0
+    moved = {}
+    for slot, tokens in sorted(held.items(), reverse=args.shift > 0):
+        target = slot + args.shift if slot >= first else slot
+        if not 0 <= target < len(table):
+            sys.exit(f"shift {args.shift:+d} puts a token off the end of the track")
+        if target in moved:
+            sys.exit(f"shift {args.shift:+d} lands two tokens on beat {target}")
+        moved[target] = tokens
+    print(f"  {sum(1 for s in held if s >= first)} of {len(held)} lyric beats shifted {args.shift:+d}")
+    if args.dry:
+        return
+    xml, ids = unshare(xml, table, moved)
+    xml = track_lyrics(xml, args.track, regroup(table, moved))
+    xml = inject(xml, {ids[i]: v for i, v in moved.items()})
+    save_gpif(args.src, args.out, xml)
+    print(f"{len(moved)} lyric beats -> {args.out}")
+
+
+def cmd_refresh(args):
+    xml = load_gpif(args.src)
+    table, held = current(xml, args.track)
+    block = [(bar, text) for bar, text in track_block(xml, args.track) if text.strip()]
+    beats = sum(len(v) for v in held.values())
+    print(f"  track block {len(block)} line(s), beats holding words {beats}")
+    if block and not beats:
+        sys.exit("the Lyrics window has text and no beat carries it: the words are off the staff")
+    if not args.write:
+        return
+    if not args.out:
+        sys.exit("refresh --write needs an out.gp")
+    xml = track_lyrics(xml, args.track, regroup(table, held))
+    save_gpif(args.src, args.out, xml)
+    print(f"track block respelled from {beats} beats -> {args.out}")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    verb = ap.add_subparsers(dest="verb", required=True)
+
+    new = verb.add_parser("add", help="place lyrics the score does not have yet")
+    new.add_argument("src")
+    new.add_argument("out")
+    new.add_argument("lyrics")
+    new.add_argument("--raw", action="store_true", help="text is already one token per beat, space separated, empty token for a blank beat")
+    new.add_argument("--dry", action="store_true", help="print the placement, write nothing")
+    new.set_defaults(run=cmd_add)
+
+    nudge = verb.add_parser("modify", help="move words already placed, spacing untouched")
+    nudge.add_argument("src")
+    nudge.add_argument("out")
+    nudge.add_argument("--shift", type=int, required=True, help="beats to move by, negative moves earlier")
+    nudge.add_argument("--from", dest="start", type=int, default=0, help="0-based bar to start moving at")
+    nudge.add_argument("--dry", action="store_true")
+    nudge.set_defaults(run=cmd_modify)
+
+    check = verb.add_parser("refresh", help="are the words still on the staff, and respell the track block")
+    check.add_argument("src")
+    check.add_argument("out", nargs="?")
+    check.add_argument("--write", action="store_true", help="respell the track block from the beats")
+    check.set_defaults(run=cmd_refresh)
+
+    for parser in (new, nudge, check):
+        parser.add_argument("--track", type=int, default=0)
+    args = ap.parse_args()
+    return args.run(args)
 
 
 if __name__ == "__main__":

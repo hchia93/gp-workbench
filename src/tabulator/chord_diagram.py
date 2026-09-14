@@ -1,8 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Read chords off a Guitar Pro 8 score and inject diagrams and chord marks.
+"""Chord diagrams of a Guitar Pro 8 score, and the marks that point at them.
 
-    python src/tabulator/inject_chord_diagram.py in.gp out.gp
-        [--key D] [--dry-run]
+    python src/tabulator/chord_diagram.py deduce  in.gp out.gp [--key D] [--dry-run]
+    python src/tabulator/chord_diagram.py mark    in.gp out.gp [--clear]
+    python src/tabulator/chord_diagram.py refresh in.gp [out.gp] [--rename OLD=NEW] [--drop NAME]
+
+The three touch different things on purpose. deduce reads the fretted notes and
+grows the diagram collection; it places no mark. mark places one, and only ever
+from a diagram the collection already holds, so a name it cannot account for
+stays off the staff instead of being invented at mark time. Every bar carries a
+mark: a chord running on from the bar before is restated, not left blank.
+refresh is for changing a diagram after the fact, where the marks pointing at it
+have to follow.
 
 Names are chosen the way the program's chord tool lists them: every spelling
 that fits the fretted notes is a candidate, and the pick prefers a chord tone
@@ -18,6 +27,7 @@ file is patched in place as text; nothing drawn in Guitar Pro is regenerated.
 """
 
 import argparse
+import collections
 import io
 import re
 import sys
@@ -313,14 +323,33 @@ def lyrics_xml(lines):
 
 # ---- main ----------------------------------------------------------------------
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("src")
-    ap.add_argument("out")
-    ap.add_argument("--key", help="D, Bm, F#, Ebm ... (default: the score's key signature)")
-    ap.add_argument("--dry-run", action="store_true")
-    args = ap.parse_args()
+def item_frets(item):
+    """The shape a diagram draws, as {guitar string 1-6: fret}."""
+    return {6 - int(s): int(f) for s, f in re.findall(r'<Fret string="(\d+)" fret="(\d+)"/>', item)}
 
+
+def best_item(voicing, kept):
+    """The diagram already on file that this voicing is playing, or None.
+
+    mark never names a chord of its own: it recognises one the collection
+    already holds. A voicing nothing accounts for goes unmarked and deduce is
+    the one that has to answer for it.
+    """
+    want = {s: f for s, (f, _) in voicing.items()}
+    best, score = None, 0
+    for name, (cid, body) in kept.items():
+        have = item_frets(body)
+        if not have:
+            continue
+        hit = sum(1 for s, f in have.items() if want.get(s) == f)
+        miss = sum(1 for s, f in have.items() if s in want and want[s] != f)
+        value = hit - miss
+        if value > score:
+            best, score = name, value
+    return best
+
+
+def cmd_deduce(args):
     xml = load_gpif(args.src)
     bars = read_score(xml)
     tonic = key_of(xml, args.key)
@@ -375,13 +404,113 @@ def main():
     xml = re.sub(r'(<Property name="DiagramWorkingSet">\s*)<Items(?:/>|>.*?</Items>)',
                  lambda m: m.group(1) + work, xml, count=1, flags=re.S)
 
+    save_gpif(args.src, args.out, xml)
+    print(f"{len(names)} diagrams in the collection -> {args.out}")
+
+
+def cmd_mark(args):
+    xml = load_gpif(args.src)
+    bars = read_score(xml)
+    kept = existing_items(xml)
+    if not kept:
+        sys.exit("the diagram collection is empty; run deduce first")
+    if args.clear:
+        xml = re.sub(r"<Chord><!\[CDATA\[.*?\]\]></Chord>\s*", "", xml, flags=re.S)
+    ids = {name: cid for name, (cid, _) in kept.items()}
+
+    found = {}
+    for b, i, voicing in segments(bars):
+        name = best_item(voicing, kept)
+        if name:
+            found.setdefault(b, []).append((i, name))
+
+    # every bar carries a mark, so a chord running on is restated rather than
+    # leaving the bar blank
+    marks, carried, blank = [], None, []
+    for b in range(len(bars)):
+        here = found.get(b, [])
+        if not here or here[0][0] != 0:
+            if carried:
+                marks.append((b, 0, carried))
+            else:
+                blank.append(b + 1)
+        for i, name in here:
+            marks.append((b, i, name))
+            carried = name
+
     placed = 0
     for b, i, name in marks:
         xml, done = mark_beat(xml, bars[b][1], i, ids[name])
         placed += done
-
+    print(f"{len(marks)} marks over {len(bars)} bars, {placed} written"
+          + (f", no chord yet for bar {blank[0]}-{blank[-1]}" if blank else ""))
     save_gpif(args.src, args.out, xml)
-    print(f"placed {placed} marks -> {args.out}")
+    print(f"-> {args.out}")
+
+
+def cmd_refresh(args):
+    xml = load_gpif(args.src)
+    kept = existing_items(xml)
+    by_id = {cid: name for name, (cid, _) in kept.items()}
+    used = collections.Counter(int(c) for c in re.findall(r"<Chord><!\[CDATA\[(\d+)\]\]></Chord>", xml))
+    dangling = {cid: n for cid, n in used.items() if cid not in by_id}
+    print(f"  {len(kept)} diagrams, {sum(used.values())} marks over {len(used)} of them")
+    for name, (cid, _) in sorted(kept.items(), key=lambda kv: kv[1][0]):
+        print(f"    id {cid:<3} {name:<10} {used.get(cid, 0)} mark(s)")
+    if dangling:
+        for cid, n in sorted(dangling.items()):
+            print(f"    id {cid:<3} {'(gone)':<10} {n} mark(s)")
+        sys.exit("marks point at diagrams the collection no longer holds")
+
+    changed = []
+    if args.rename:
+        old, _, new = args.rename.partition("=")
+        if old not in kept:
+            sys.exit(f"no diagram named {old}")
+        cid, body = kept[old]
+        xml = xml.replace(body, body.replace(f'name="{old}"', f'name="{new}"', 1), 1)
+        changed.append(f"{old} -> {new} on {used.get(cid, 0)} mark(s)")
+    if args.drop:
+        if args.drop not in kept:
+            sys.exit(f"no diagram named {args.drop}")
+        cid, body = kept[args.drop]
+        xml = xml.replace(body + "\n", "").replace(body, "")
+        xml = re.sub(r"<Chord><!\[CDATA\[%d\]\]></Chord>\s*" % cid, "", xml)
+        changed.append(f"dropped {args.drop} and its {used.get(cid, 0)} mark(s)")
+    if not changed:
+        return
+    if not args.out:
+        sys.exit("refresh needs an out.gp to write a change")
+    save_gpif(args.src, args.out, xml)
+    print("  " + "; ".join(changed) + f" -> {args.out}")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    verb = ap.add_subparsers(dest="verb", required=True)
+
+    grow = verb.add_parser("deduce", help="read the frets, grow the diagram collection, place no mark")
+    grow.add_argument("src")
+    grow.add_argument("out")
+    grow.add_argument("--key", help="D, Bm, F#, Ebm ... (default: the score's key signature)")
+    grow.add_argument("--dry-run", action="store_true")
+    grow.set_defaults(run=cmd_deduce)
+
+    put = verb.add_parser("mark", help="mark every bar from the diagrams already on file")
+    put.add_argument("src")
+    put.add_argument("out")
+    put.add_argument("--clear", action="store_true", help="drop the marks already in the score first")
+    put.set_defaults(run=cmd_mark)
+
+    fix = verb.add_parser("refresh", help="audit the collection and carry a change onto its marks")
+    fix.add_argument("src")
+    fix.add_argument("out", nargs="?")
+    fix.add_argument("--rename", help="OLD=NEW, the marks keep pointing at it")
+    fix.add_argument("--drop", help="remove a diagram and every mark on it")
+    fix.set_defaults(run=cmd_refresh)
+
+    args = ap.parse_args()
+    return args.run(args)
 
 
 if __name__ == "__main__":

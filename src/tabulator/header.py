@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Fill in the header of a Guitar Pro 8 score: song, artist, key, tempo, tuning.
+"""The header of a Guitar Pro 8 score: song, artist, key, tempo, tuning.
 
-    python src/tabulator/init_tabulate.py in.gp out.gp --title T --artist A
+    python src/tabulator/header.py setup in.gp out.gp --title T --artist A
         [--album X] [--tabber X] [--tempo 72] [--key D|Bm] [--capo 0]
         [--tuning "E2 A2 D3 G3 B3 E4"]
 
@@ -46,9 +46,7 @@ def midi_of(token):
     return int(token)
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("src")
+def cmd_setup(args):
     ap.add_argument("out")
     ap.add_argument("--title")
     ap.add_argument("--artist")
@@ -57,9 +55,6 @@ def main():
     ap.add_argument("--tempo", type=int)
     ap.add_argument("--key", help="D, Bm, F#, Ebm ...")
     ap.add_argument("--capo", type=int)
-    ap.add_argument("--tuning", help="six notes low to high, names like E2 or MIDI numbers")
-    args = ap.parse_args()
-
     xml = load_gpif(args.src)
     done = []
     for tag, value in (("Title", args.title), ("Artist", args.artist),
@@ -85,6 +80,25 @@ def main():
 
     save_gpif(args.src, args.out, xml)
     print(f"set {', '.join(done) or 'nothing'} -> {args.out}")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    verb = ap.add_subparsers(dest="verb", required=True)
+    setup = verb.add_parser("setup", help="write the header fields given, leave the rest alone")
+    setup.add_argument("src")
+    setup.add_argument("out")
+    setup.add_argument("--title")
+    setup.add_argument("--artist")
+    setup.add_argument("--album")
+    setup.add_argument("--tabber")
+    setup.add_argument("--tempo", type=int)
+    setup.add_argument("--key", help="D, Bm, F#, Ebm ...")
+    setup.add_argument("--capo", type=int)
+    setup.add_argument("--tuning", help="six notes low to high, names like E2 or MIDI numbers")
+    setup.set_defaults(run=cmd_setup)
+    args = ap.parse_args()
+    return args.run(args)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 """Give a Guitar Pro score the house look.
 
-    python src/tabulator/apply_style.py in.gp out.gp [--from reference.gp] [--format gp7|gp8]
+    python src/tabulator/style.py apply in.gp out.gp [--from reference.gp] [--format gp7|gp8]
 
 Notation or tablature visibility, page layout and chord-diagram drawing live in
 three binary entries next to score.gpif. Guitar Pro 8 only honours a stylesheet
@@ -46,20 +46,26 @@ def entries_from_resource(fmt):
     return {f"Content/{e}": (folder / e).read_bytes() for e in ENTRIES if (folder / e).exists()}
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("src")
-    ap.add_argument("out")
-    ap.add_argument("--from", dest="ref", help=".gp whose style entries to copy instead of the bundled set")
-    ap.add_argument("--format", choices=("gp7", "gp8"), help="override the format detected from the target")
-    args = ap.parse_args()
-
+def cmd_apply(args):
     xml = load_gpif(args.src)
     fmt = args.format or detect_format(xml)
     replace = entries_from_gp(args.ref) if args.ref else entries_from_resource(fmt)
     save_gpif(args.src, args.out, xml, replace)
     source = args.ref if args.ref else f"resource/style/{fmt}"
     print(f"{fmt}: copied {', '.join(k.split('/')[1] for k in replace)} from {source} -> {args.out}")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    verb = ap.add_subparsers(dest="verb", required=True)
+    use = verb.add_parser("apply", help="give the score the house look")
+    use.add_argument("src")
+    use.add_argument("out")
+    use.add_argument("--from", dest="ref", help=".gp whose style entries to copy instead of the bundled set")
+    use.add_argument("--format", choices=("gp7", "gp8"), help="override the format detected from the target")
+    use.set_defaults(run=cmd_apply)
+    args = ap.parse_args()
+    return args.run(args)
 
 
 if __name__ == "__main__":

@@ -94,26 +94,48 @@ python src/validator/benchmarker.py --library <path> --detail "song name"
 两条路径的草稿都进 `src/tabulator/` 收尾。在 Guitar Pro 里打开草稿手改并保存，再按顺序跑下面的脚本，每个脚本都是 `in.gp out.gp`。
 
 ```bash
-python src/tabulator/init_tabulate.py in.gp out.gp --title ... --artist ... --tempo 72 --key D
-python src/tabulator/apply_style.py in.gp out.gp [--from reference.gp] [--format gp7|gp8]
-python src/tabulator/inject_chord_diagram.py in.gp out.gp [--chart]
+python src/tabulator/bars.py          add|modify|replace in.gp out.gp section.json [--from N]
+python src/tabulator/header.py        setup in.gp out.gp --title ... --artist ... --tempo 72 --key D
+python src/tabulator/style.py         apply in.gp out.gp [--from reference.gp] [--format gp7|gp8]
+python src/tabulator/chord_pattern.py apply in.gp out.gp --from N --chords "xx0222:2 x20222:2" [--figure "e:F0+F1+T0 e:F2"]
+python src/tabulator/chord_diagram.py deduce in.gp out.gp [--key D]
+python src/tabulator/chord_diagram.py mark in.gp out.gp [--clear]
 python src/tools/chord-finder/analyse_vocal_onset.py vocals.wav --bpm 72.1 --phase 0.045 --grid0 22 --json build/vox.json
-python src/tabulator/inject_lyrics.py in.gp out.gp lyrics.json [--raw]
+python src/tabulator/lyrics.py        add in.gp out.gp lyrics.json [--raw]
 ```
 
 <div align="center">
 
 | 脚本 | 写入 |
 |---|---|
-| `init_tabulate.py` | 头信息：歌名、歌手、专辑、tabber、速度、调性、capo、调弦 |
-| `apply_style.py` | 样式三件 `BinaryStylesheet`、`LayoutConfiguration`、`PartConfiguration`，取自 `resource/style/<gp7\|gp8>/`，格式按目标文件 `<GPVersion>` 自动判。`--from` 改为从任意 `.gp` 抄这三项，`--format` 强制指定 |
-| `inject_chord_diagram.py` | 从谱面按小节推和弦，写 `DiagramCollection`，换和弦处打 `<Chord>` 标记，`--chart` 同时填页面顶部的和弦表 |
+| `bars.py` | 小节。`add` 追加到末尾，`modify` 从 `--from` 起改写并逐位承接 Guitar Pro 挂在 beat 上的 `<Lyrics>` 与 `<Chord>`，装不下就报错退出，`replace` 是唯一允许丢的那个 |
+| `header.py` | `setup` 写头信息：歌名、歌手、专辑、tabber、速度、调性、capo、调弦。只写给出的项 |
+| `style.py` | `apply` 样式三件 `BinaryStylesheet`、`LayoutConfiguration`、`PartConfiguration`，取自 `resource/style/<gp7\|gp8>/`，格式按目标文件 `<GPVersion>` 自动判。`--from` 改为从任意 `.gp` 抄这三项，`--format` 强制指定 |
+| `chord_pattern.py` | `sample` 把一小节读成槽位型，与 `src/sampling` 同一种写法。`apply` 把型铺到一串和弦上，型来自 `--sample` 指定的小节或 `--figure` 字符串 |
+| `chord_diagram.py` | `deduce` 从指板推和弦，扩充 `DiagramCollection` 与顶部和弦表，不打标记。`mark` 只用已有和弦图打标记，每小节都打，接不上的小节留空。`refresh` 审计并把和弦图的改动级联到指向它的标记 |
 | `analyse_vocal_onset.py` | 人声轨音节起点转成 `小节.拍位`，歌词落位依据，仅源头 A |
-| `inject_lyrics.py` | 歌词行，每个 CJK 字一个 token，空格占一拍 |
+| `lyrics.py` | `add` 新歌词按每行起始小节定 spacing。`modify` 移动已落位的词，spacing 不动。`refresh` 检查词是否还在谱面上，并从 beat 反排 track 块 |
 
 </div>
 
-模板：仓库不附带 `.gp`。`--template` 接你自己的任意 `.gp`。`apply_style.py` 不需要，`resource/style/` 自带的样式集覆盖 gp7 与 gp8。
+模板：仓库不附带 `.gp`。`--template` 接你自己的任意 `.gp`。`style.py` 不需要，`resource/style/` 自带的样式集覆盖 gp7 与 gp8。
+
+## 词条库
+
+`src/sampling/` 扫已有的 `.gp`，把常用和弦的分解形式打包成词条。一条词条是一个和弦加一种分解形式，形式只记哪个槽位在哪一拍被拨，品位扔掉，所以能铺到任何和弦上。
+
+```bash
+python src/sampling/scan.py "D:/scores/**/*.gp"
+```
+
+| 调用 | 取到 |
+|---|---|
+| `sampling.call("D7M")` | D7M 的全部分解形式，按跨谱数排 |
+| `sampling.call("D7M@1")` | 最通用的那条 |
+| `sampling.figures(songs=3)` | 至少三份谱共用的型，不分和弦 |
+| `sampling.dialect()` | 和弦名与用量，用的是库里的拼法 |
+
+`corpus.db` 是 gzip 的 JSON，由 `scan.py` 重建，不直接读。不存音符也不存歌词文本。
 
 ## 依赖
 
@@ -154,10 +176,15 @@ src/
 │   ├── benchmarker.py                 用有真值的曲目测解码准确率
 │   └── test/                          测试用例
 ├── tabulator/
-│   ├── init_tabulate.py               填写曲目头信息
-│   ├── apply_style.py                 套用排版样式
-│   ├── inject_chord_diagram.py        写入和弦图与和弦标记
-│   └── inject_lyrics.py               写入歌词
+│   ├── bars.py                        增改替小节
+│   ├── header.py                      曲目头信息
+│   ├── style.py                       排版样式
+│   ├── chord_pattern.py               拨弦型
+│   ├── chord_diagram.py               和弦图与标记
+│   └── lyrics.py                      beat 上的歌词
+├── sampling/
+│   ├── scan.py                        批量分析 .gp 树
+│   └── corpus.db                      打包的型、和弦与惯例
 └── tools/
     ├── chord-finder/
     │   ├── analyse_vocal_onset.py     定位人声音节落在第几拍
