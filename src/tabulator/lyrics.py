@@ -21,6 +21,12 @@ voice 0, rests included. The track level block is written too, spelled the way
 dispatch would need it, so an edit that moves bars rebuilds the same words
 instead of clearing every beat.
 
+Contract, enforced: the line layout of the Lyrics panel belongs to whoever
+wrote it. One lyric phrase per line, the phrases being the song's own short
+lines and never the bars. modify and refresh carry that layout over untouched
+and check it afterwards; a pass that would join, split or reflow a line stops
+without writing. Only add lays out lines, from the source text it was handed.
+
 Tokens: every CJK character is its own token, an ASCII word stays whole, PLUS
 glues characters onto one beat, DOT leaves a beat blank, and a space only
 separates. So "無+心 的+愛" puts "無心" on the rest and "的愛" on the chord after it.
@@ -245,8 +251,69 @@ def current(xml, track):
     return table, held
 
 
-def regroup(table, per_slot):
-    """Track block rows spelled from what the beats actually hold."""
+def spell(text):
+    """Tokens of a track line, plus where its line breaks sit.
+
+    A break is keyed to the count of sung tokens before it, not to a token
+    index, so moving the words in time cannot drag a break along with them.
+    """
+    tokens, cuts, cur = [], set(), ""
+    for ch in text:
+        if ch in " \n":
+            tokens.append(cur)
+            cur = ""
+            if ch == "\n":
+                cuts.add(sum(1 for t in tokens if t))
+        else:
+            cur += ch
+    tokens.append(cur)
+    return tokens, cuts
+
+
+def relay(tokens, cuts):
+    """Write the tokens back out with the breaks put back where they were."""
+    out, sung = [], 0
+    for i, token in enumerate(tokens):
+        if i:
+            out.append("\n" if token and sung in cuts else " ")
+        out.append(token)
+        if token:
+            sung += 1
+    return "".join(out)
+
+
+def layout(text):
+    """What the panel shows of a line: how many words, and where it breaks."""
+    tokens, cuts = spell(text)
+    return sum(1 for t in tokens if t), tuple(sorted(cuts))
+
+
+def hold_layout(before, after):
+    """Stop rather than hand back a layout other than the one taken in.
+
+    The blank runs move when the words move, and that is the point of modify.
+    The line breaks do not: they are phrasing, and nothing in the beats records
+    them, so a pass that loses one has destroyed something it cannot rebuild.
+    """
+    was = [layout(text) for _, text in before]
+    now = [layout(text) for _, text in after]
+    if len(was) != len(now):
+        sys.exit(f"the lyric block had {len(was)} lines and would become {len(now)}, refusing to write")
+    for i, (a, b) in enumerate(zip(was, now), 1):
+        if a != b:
+            sys.exit(f"lyric line {i} would change shape: {a[0]} words breaking at {a[1] or 'nowhere'} "
+                     f"becomes {b[0]} breaking at {b[1] or 'nowhere'}. The layout is the author's, "
+                     f"refusing to write")
+
+
+def regroup(table, per_slot, authored=()):
+    """Track block rows spelled from what the beats actually hold.
+
+    The line breaks come from the block already in the file. Beat level lyrics
+    record which word sits on which beat and nothing about phrasing, so a
+    respelling has to be handed the layout or it will flatten the panel into
+    one long line.
+    """
     rows = []
     for line in range(LINES):
         used = sorted(i for i, m in per_slot.items() if line in m)
@@ -255,7 +322,11 @@ def regroup(table, per_slot):
             continue
         first, last = used[0], used[-1]
         placed = [(per_slot.get(i, {}).get(line, ""), table[i][4]) for i in range(first, last + 1)]
-        rows.append((table[first][0], track_text(placed)))
+        text = track_text(placed)
+        was = authored[line] if line < len(authored) else ""
+        if "\n" in was:
+            text = relay(spell(text)[0], spell(was)[1])
+        rows.append((table[first][0], text))
     return rows
 
 
@@ -315,8 +386,11 @@ def cmd_modify(args):
     print(f"  {sum(1 for s in held if s >= first)} of {len(held)} lyric beats shifted {args.shift:+d}")
     if args.dry:
         return
+    authored = track_block(xml, args.track)
+    rows = regroup(table, moved, [text for _, text in authored])
+    hold_layout(authored, rows)
     xml, ids = unshare(xml, table, moved)
-    xml = track_lyrics(xml, args.track, regroup(table, moved))
+    xml = track_lyrics(xml, args.track, rows)
     xml = inject(xml, {ids[i]: v for i, v in moved.items()})
     save_gpif(args.src, args.out, xml)
     print(f"{len(moved)} lyric beats -> {args.out}")
@@ -334,7 +408,10 @@ def cmd_refresh(args):
         return
     if not args.out:
         sys.exit("refresh --write needs an out.gp")
-    xml = track_lyrics(xml, args.track, regroup(table, held))
+    authored = track_block(xml, args.track)
+    rows = regroup(table, held, [text for _, text in authored])
+    hold_layout(authored, rows)
+    xml = track_lyrics(xml, args.track, rows)
     save_gpif(args.src, args.out, xml)
     print(f"track block respelled from {beats} beats -> {args.out}")
 

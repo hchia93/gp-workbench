@@ -188,7 +188,7 @@ def run(args):
         sys.exit(f"payload carry lost {before - after} element(s), refusing to write {args.out}")
 
     save_gpif(args.src, args.out, xml)
-    print(f"{len(reuse)} bars rewritten, {len(bar_entries)} appended, {len(beats)} beats, "
+    print(f"{min(len(reuse), len(bars))} bars rewritten, {len(bar_entries)} appended, {len(beats)} beats, "
           f"{len(notes)} notes, {carried} payload grafted, {after}/{before} kept -> {args.out}")
 
 

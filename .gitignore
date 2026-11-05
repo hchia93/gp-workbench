@@ -13,6 +13,9 @@ dist/
 # Third-party arrangements used for local testing, not ours to redistribute
 /sample/
 
+# Per-task working notes, not part of the tool
+/.claude/Task/
+
 # IDE
 .idea/
 .vscode/

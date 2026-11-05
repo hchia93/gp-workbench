@@ -1,17 +1,21 @@
 # -*- coding: utf-8 -*-
 """Chord diagrams of a Guitar Pro 8 score, and the marks that point at them.
 
-    python src/tabulator/chord_diagram.py deduce  in.gp out.gp [--key D] [--dry-run]
-    python src/tabulator/chord_diagram.py mark    in.gp out.gp [--clear]
-    python src/tabulator/chord_diagram.py refresh in.gp [out.gp] [--rename OLD=NEW] [--drop NAME]
+    python src/tabulator/chord_diagram.py deduce   in.gp out.gp [--key D] [--dry-run]
+    python src/tabulator/chord_diagram.py mark     in.gp out.gp [--clear]
+    python src/tabulator/chord_diagram.py refresh  in.gp [out.gp] [--rename OLD=NEW]
+        [--shape TARGET=xx0232] [--relink OLD=NEW]
+    python src/tabulator/chord_diagram.py sanitize in.gp out.gp
 
 The three touch different things on purpose. deduce reads the fretted notes and
 grows the diagram collection; it places no mark. mark places one, and only ever
 from a diagram the collection already holds, so a name it cannot account for
 stays off the staff instead of being invented at mark time. Every bar carries a
 mark: a chord running on from the bar before is restated, not left blank.
-refresh is for changing a diagram after the fact, where the marks pointing at it
-have to follow.
+refresh is the link pass: it changes a diagram that is already on file, and the
+marks pointing at it follow. sanitize is the other direction, dropping the
+diagrams no mark points at any more. A target is a name, or an id when two
+diagrams share a name.
 
 Names are chosen the way the program's chord tool lists them: every spelling
 that fits the fretted notes is a candidate, and the pick prefers a chord tone
@@ -448,21 +452,105 @@ def cmd_mark(args):
     print(f"-> {args.out}")
 
 
+def items_by_id(xml):
+    """Every diagram, keyed by id. Two may share a name; existing_items cannot."""
+    block = re.search(r'<Property name="DiagramCollection">\s*<Items>(.*?)</Items>', xml, re.S)
+    if not block:
+        return {}
+    out = {}
+    for item in re.findall(r'<Item id="\d+" name="[^"]*">.*?</Item>', block.group(1), re.S):
+        cid = int(re.search(r'id="(\d+)"', item).group(1))
+        out[cid] = (re.search(r'name="([^"]*)"', item).group(1), item)
+    return out
+
+
+def pick(target, every):
+    """A diagram by id when the target is a number, by name otherwise."""
+    if target.isdigit() and int(target) in every:
+        return int(target)
+    hits = [cid for cid, (name, _) in every.items() if name == target]
+    if not hits:
+        sys.exit(f"no diagram named {target}")
+    if len(hits) > 1:
+        sys.exit(f"{len(hits)} diagrams are named {target}: give an id, one of {sorted(hits)}")
+    return hits[0]
+
+
+def redraw(item, shape):
+    """Draw a diagram from a shape written low string first, x for a dead one.
+
+    The string attribute counts down from the low E, which is the same order the
+    shape is written in, so the index is the attribute.
+    """
+    if len(shape) != 6:
+        sys.exit(f"shape {shape}: six characters, low string first")
+    frets = {i: int(ch) for i, ch in enumerate(shape) if ch != "x"}
+    drawn = "\n".join('<Fret string="%d" fret="%d"/>' % (st, fr) for st, fr in sorted(frets.items()))
+    held = "\n".join('<Position finger="None" fret="%d" string="%d"/>' % (fr, st)
+                     for st, fr in sorted(frets.items()))
+    held += "".join('\n<Position finger="None" fret="4294967295" string="%d"/>' % st
+                    for st in range(6) if st not in frets)
+    item = re.sub(r"(<Diagram[^>]*>).*?(<Fingering>)",
+                  lambda m: m.group(1) + "\n" + drawn + "\n" + m.group(2), item, count=1, flags=re.S)
+    return re.sub(r"<Fingering>.*?</Fingering>", "<Fingering>\n" + held + "\n</Fingering>",
+                  item, count=1, flags=re.S)
+
+
+def cmd_sanitize(args):
+    xml = load_gpif(args.src)
+    every = items_by_id(xml)
+    used = {int(c) for c in re.findall(r"<Chord><!\[CDATA\[(\d+)\]\]></Chord>", xml)}
+    dead = {cid: name for cid, (name, _) in every.items() if cid not in used}
+    if not dead:
+        print(f"  {len(every)} diagrams, every one of them marked somewhere")
+        return
+    for cid, (name, body) in every.items():
+        if cid in dead:
+            xml = xml.replace(body + "\n", "").replace(body, "")
+    # the working set carries no ids, so a name nothing draws any more goes too
+    kept_names = {name for cid, (name, _) in every.items() if cid not in dead}
+    block = re.search(r'(<Property name="DiagramWorkingSet">\s*)<Items>(.*?)</Items>', xml, re.S)
+    if block:
+        items = re.findall(r'<Item name="[^"]*">.*?</Item>', block.group(2), re.S)
+        live = [i for i in items if re.search(r'name="([^"]*)"', i).group(1) in kept_names]
+        xml = xml[:block.start(2)] + "\n" + "\n".join(live) + "\n" + xml[block.end(2):]
+    print("  dropped %d unmarked diagram(s): %s"
+          % (len(dead), ", ".join("%s (id %d)" % (n, c) for c, n in sorted(dead.items()))))
+    save_gpif(args.src, args.out, xml)
+    print(f"  {len(every) - len(dead)} left -> {args.out}")
+
+
 def cmd_refresh(args):
     xml = load_gpif(args.src)
     kept = existing_items(xml)
-    by_id = {cid: name for name, (cid, _) in kept.items()}
+    every = items_by_id(xml)
+    by_id = {cid: name for cid, (name, _) in every.items()}
     used = collections.Counter(int(c) for c in re.findall(r"<Chord><!\[CDATA\[(\d+)\]\]></Chord>", xml))
     dangling = {cid: n for cid, n in used.items() if cid not in by_id}
-    print(f"  {len(kept)} diagrams, {sum(used.values())} marks over {len(used)} of them")
-    for name, (cid, _) in sorted(kept.items(), key=lambda kv: kv[1][0]):
-        print(f"    id {cid:<3} {name:<10} {used.get(cid, 0)} mark(s)")
+    print(f"  {len(every)} diagrams, {sum(used.values())} marks over {len(used)} of them")
+    shared = collections.Counter(by_id.values())
+    for cid, (name, _) in sorted(every.items()):
+        flag = "  <- name shared with another diagram" if shared[name] > 1 else ""
+        print(f"    id {cid:<3} {name:<10} {used.get(cid, 0)} mark(s){flag}")
     if dangling:
         for cid, n in sorted(dangling.items()):
             print(f"    id {cid:<3} {'(gone)':<10} {n} mark(s)")
         sys.exit("marks point at diagrams the collection no longer holds")
 
     changed = []
+    if args.relink:
+        old, _, new = args.relink.partition("=")
+        src_id, dst_id = pick(old, every), pick(new, every)
+        moved = used.get(src_id, 0)
+        xml = re.sub(r"<Chord><!\[CDATA\[%d\]\]></Chord>" % src_id,
+                     "<Chord><![CDATA[%d]]></Chord>" % dst_id, xml)
+        changed.append(f"{moved} mark(s) moved from id {src_id} to id {dst_id}")
+    if args.shape:
+        target, _, shape = args.shape.partition("=")
+        cid = pick(target, every)
+        name, body = every[cid]
+        xml = xml.replace(body, redraw(body, shape), 1)
+        changed.append(f"id {cid} {name} redrawn as {shape}")
     if args.rename:
         old, _, new = args.rename.partition("=")
         if old not in kept:
@@ -506,8 +594,15 @@ def main():
     fix.add_argument("src")
     fix.add_argument("out", nargs="?")
     fix.add_argument("--rename", help="OLD=NEW, the marks keep pointing at it")
+    fix.add_argument("--shape", help="TARGET=xx0232, redraw a diagram low string first")
+    fix.add_argument("--relink", help="OLD=NEW, move every mark from one diagram to another")
     fix.add_argument("--drop", help="remove a diagram and every mark on it")
     fix.set_defaults(run=cmd_refresh)
+
+    tidy = verb.add_parser("sanitize", help="drop the diagrams no mark points at")
+    tidy.add_argument("src")
+    tidy.add_argument("out")
+    tidy.set_defaults(run=cmd_sanitize)
 
     args = ap.parse_args()
     return args.run(args)
